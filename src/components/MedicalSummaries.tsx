@@ -549,9 +549,19 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
       genStore.set({ timerHandle: null });
       // â”€â”€ Save summary record to DynamoDB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       try {
+        // Strip visit narratives to avoid DynamoDB 400KB item limit.
+        // Only save metadata â full visits are loaded from job result on demand.
+        const visitsMeta = rawVisits.map((v: any) => ({
+          visit_date: v.visit_date || v.date || '',
+          provider: v.provider || '',
+          facility: v.facility || '',
+          diagnosis: Array.isArray(v.diagnosis) ? v.diagnosis.slice(0, 3) : (v.diagnosis || ''),
+        }));
         await awsProxy('/summaries', 'POST', {
           patient_name: patientName,
-          visits: rawVisits,
+          visits: visitsMeta,
+          visit_count: rawVisits.length,
+          job_id: job_id,
           status: 'complete',
           org_id: ORG_ID,
         });
@@ -572,12 +582,21 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Export to Word Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
   const exportToWord = async (summary: any) => {
-    // Re-fetch fresh data
+    // Re-fetch fresh data — prefer job result (has full narratives) over summary record (metadata only)
     let freshSummary = summary;
     try {
-      const fetched = await awsProxy(`/summaries/${summary.aws_summary_id || summary.id}`, 'GET');
-      if (fetched && (Array.isArray(fetched.visits) ? fetched.visits.length > 0 : fetched.visits)) {
-        freshSummary = fetched;
+      // If summary has a job_id, fetch full visits from the job result
+      if (summary.job_id) {
+        const jobResult = await awsProxy(`/jobs/${summary.job_id}`, 'GET');
+        if (jobResult?.result?.visits?.length > 0) {
+          freshSummary = { ...summary, visits: jobResult.result.visits, patient_name: jobResult.result.patient_name || summary.patient_name };
+        }
+      } else {
+        // Fallback: fetch summary record directly
+        const fetched = await awsProxy(`/summaries/${summary.aws_summary_id || summary.id}`, 'GET');
+        if (fetched && (Array.isArray(fetched.visits) ? fetched.visits.length > 0 : fetched.visits)) {
+          freshSummary = fetched;
+        }
       }
     } catch (_) {}
     const finalVisits: any[] = freshSummary.visits
