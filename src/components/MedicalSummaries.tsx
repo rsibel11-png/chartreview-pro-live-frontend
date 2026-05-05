@@ -493,15 +493,194 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
   }, {});
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Generate summary Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-  // Sanitize visits to only the known string fields — prevents DynamoDB 400KB limit
-  // (matches v5 MedicalSummaries sanitizeVisits logic)
-  const sanitizeVisits = (visits: any[]): any[] => {
+
+  // ── LLM extraction prompt (full production version matching v5) ──────────
+  const buildPrompt = (rawChunkText: string, docCount: number, chunkLabel: string = '', knownVisitsChecklist: any[] = [], skipPages: number[] = []): string => {
+    const chunkText = String(rawChunkText || '').replace(/\`/g, "'").split('${').join('(');
+    return \`You are a medical-legal document analyst. Your job is to extract EVERY clinical encounter from this document including but not limited to:
+- Emergency Room (ER) visits
+- Urgent Care visits  
+- Private or group physician office visits (orthopedic, neurology, pain management, primary care, etc.)
+- Surgical visits and operative reports
+- Radiology center visits (MRI, CT, X-ray, ultrasound reports)
+- Physical Therapy / Occupational Therapy sessions
+- Chiropractic visits
+- Ambulance / EMS reports
+- C-4 Workers Compensation forms
+- IME / Expert reports / Chart reviews
+- Hospital admissions and discharge summaries
+- Any other clinical or medical-legal encounter
+
+\${skipPages.length > 0 ? \`SKIP PAGES: The following page numbers contain non-clinical content -- do NOT extract visits from pages: \${skipPages.join(', ')}.\n\` : ''}
+DO NOT skip any encounter type. Every date with a provider interaction is a separate entry.
+
+\${chunkText ? \`DOCUMENT TEXT\${chunkLabel}:\n\${chunkText}\n\` : ''}DOCUMENT TYPE HANDLING:
+
+A) OFFICE VISIT / CLINICAL NOTES: Extract each visit as a separate entry. CRITICAL: Always extract the actual practice setting/facility name. NEVER label as simply "Office Visit" -- use the specific facility name from the document header, letterhead, or provider section.
+
+B) EXPERT MEDICAL REPORTS / IME / CHART REVIEWS / RADIOLOGY: Use the EXACT document type as labeled. Examples: "Independent Medical Examination", "Consultation Report", "Chart Review", "Narrative Report", "Agreed Medical Examination", "Qualified Medical Evaluation". For radiology: use the imaging facility name if present.
+
+C) POLICE REPORTS: practice_setting: "Police Report". Extract incident narrative, officer observations, conclusions.
+
+D) AMBULANCE / EMS REPORTS: practice_setting: "Ambulance / EMS Report". Extract scene narrative, vitals, treatment administered.
+
+E) C-4 FORMS: STRICT IDENTIFICATION -- only label as C-4 if the actual WCB Form C-4 text is physically present AND the date is at or near the earliest date in the document set. ONE C-4 per case. practice_setting: "C-4 Workers Compensation Report".
+
+CRITICAL DATE ACCURACY:
+- visit_date MUST be the DATE OF SERVICE -- NOT injury date, NOT report date
+- For ER visits: service date is typically ONE DAY AFTER injury date for overnight incidents
+- The visit_date appears in the DOCUMENT HEADER, not in the HPI narrative
+- "Date of Injury" mentioned in HPI is NEVER the visit_date
+
+For EACH entry extract:
+1. visit_date (YYYY-MM-DD)
+2. rendering_provider (doctor name only)
+3. practice_setting (specific facility name)
+4. chief_complaint (brief visit purpose)
+5. hpi_summary (3-5 sentences: key symptoms, pain scale, mechanism, progression)
+6. physical_exam_findings (key pertinent positives only, 3-5 findings max)
+7. imaging_findings (ONLY if performed THIS visit)
+8. lab_findings (ONLY if performed THIS visit)
+9. impression_diagnosis (with ICD-10 codes if provided)
+10. treatment_plan (2-4 key points: interventions, restrictions, follow-up)
+
+CRITICAL EXTRACTION RULES:
+(1) Extract EVERY clinical encounter -- do NOT skip any.
+(2) For every non-PT visit, MUST populate hpi_summary, impression_diagnosis, treatment_plan if info exists.
+(3) NEVER return a visit with all content fields empty unless it is truly just a C-4 form.
+(4) NEVER hallucinate -- only use information explicitly in the text.
+(5) Every field must be a plain text string. NEVER return null, arrays, or objects for text fields.
+(6) If information is truly not available, return "".
+(7) icd10_codes must always be an array of strings (can be []).
+(8) PT/OT: Extract EVERY individual session as its own separate record. Each visit date = one record.
+(9) For PT visits: practice_setting should be the full facility name.
+
+Return ALL entries in the visits array. Also extract: patient_name, case_number.\` + (knownVisitsChecklist.length > 0 ? ('\n\nKNOWN VISIT CHECKLIST (pre-pass):\nThe following clinical encounters are known to exist. Scan carefully for each:\n' + knownVisitsChecklist.map((v: any) => \`- \${v.date} | \${v.provider} | \${v.facility} | \${v.visit_type}\`).join('\n') + '\n\nIf a listed visit is NOT found in the current documents, omit it -- it may be in a different batch.') : '');
+  };
+
+  // ── Visit Index prompt ───────────────────────────────────────────────────
+  const buildVisitIndexPrompt = (): string => {
+    return \`You are reviewing medical-legal documents. Your ONLY task is to extract a complete list of every clinical encounter date, provider name, and facility/location.
+
+For each clinical encounter found, extract:
+1. date - the date of service (YYYY-MM-DD format). PRIMARY SOURCE: the document header or note title. NEVER use the injury date or any date mentioned inside the HPI narrative.
+2. provider - the treating provider's name and credentials (e.g. "Arthur J. Taylor, MD")
+3. facility - the facility or practice name (e.g. "Nevada Orthopedic & Spine Center")
+4. visit_type - a brief label: "Office Visit", "ER Visit", "Surgery", "Physical Therapy", "Radiology", "C-4 Form", "IME", "Chiropractic", etc.
+
+RULES:
+- Include EVERY encounter -- office visits, ER, surgery, PT/OT, radiology, C-4 forms, IMEs, ambulance, etc.
+- Each unique date + provider combination is a separate entry.
+- Do NOT include administrative documents (therapy orders, authorization requests, appointment reminders, fax covers).
+- CRITICAL: The HPI section often mentions the date of injury -- this is NOT the visit date.
+- The visit date is ALWAYS in the document header (e.g. "Visit Note November 7, 2022").
+- Keep it fast and simple -- no clinical content needed, just date/provider/facility/type.
+- If a date appears in a document header but no provider is identifiable, still include the entry with provider as "Not Documented".
+
+Return all entries in the visits array.\`;
+  };
+
+  // ── Provider/setting normalizers ─────────────────────────────────────────
+  const toTitleCase = (str: string): string => {
+    if (!str) return str;
+    const letters = str.replace(/[^a-zA-Z]/g, '');
+    if (letters.length > 2 && letters === letters.toUpperCase()) {
+      const credentials = new Set(['MD', 'DO', 'PA', 'NP', 'RN', 'LPN', 'PT', 'OT', 'DC', 'DDS', 'DMD', 'DPM', 'PHD', 'APRN', 'LCSW', 'OTR', 'ATC', 'EMT', 'RPA']);
+      return str.replace(/[A-Z]+/g, (word: string) => credentials.has(word) ? word : word.charAt(0) + word.slice(1).toLowerCase());
+    }
+    return str;
+  };
+
+  // ── Sanitize helpers (full v5 logic) ─────────────────────────────────────
+  const EXCLUDED_PATTERNS = [/pacu/i, /post.?anesthesia/i, /anesthesia\s+record/i, /pre.?op\s+nursing/i, /perioperative\s+nursing/i, /nursing\s+document/i, /preop\s+nursing/i];
+
+  const isExcluded = (visit: any): boolean => {
+    const setting = (visit.practice_setting || '').toLowerCase();
+    if (setting.includes('c-4') || setting.includes('workers') || setting.includes('wcb')) return false;
+    const combined = \`\${visit.practice_setting || ''} \${visit.rendering_provider || ''} \${visit.chief_complaint || ''}\`;
+    return EXCLUDED_PATTERNS.some((rx: RegExp) => rx.test(combined));
+  };
+
+  const isLikelyMisdatedER = (visit: any): boolean => {
+    if (!visit.visit_date || !visit.injury_date) return false;
+    if (visit.visit_date !== visit.injury_date) return false;
+    const settingLower = (visit.practice_setting || '').toLowerCase();
+    if (settingLower.includes('c-4') || settingLower.includes('workers') || settingLower.includes('wcb')) return false;
+    return true;
+  };
+
+  const addOneDay = (dateStr: string): string => {
+    const [y, m, day] = dateStr.split('-').map(Number);
+    const dt = new Date(y, m - 1, day + 1);
+    return \`\${dt.getFullYear()}-\${String(dt.getMonth() + 1).padStart(2, '0')}-\${String(dt.getDate()).padStart(2, '0')}\`;
+  };
+
+  const enforceOneC4 = (visitList: any[]): any[] => {
+    const isC4 = (v: any) => { const s = (v.practice_setting || '').toLowerCase(); return s.includes('c-4') || s.includes('wcb') || s.includes("workers' compensation report"); };
+    const c4s = visitList.filter(isC4);
+    if (c4s.length <= 1) return visitList;
+    const sortedC4 = [...c4s].sort((a: any, b: any) => {
+      if (!a.visit_date) return 1; if (!b.visit_date) return -1;
+      const diff = (a.visit_date || '').localeCompare(b.visit_date || '');
+      if (diff !== 0) return diff;
+      return (a.practice_setting || '').toLowerCase().includes('c-4') ? -1 : 1;
+    });
+    const earliestDate = sortedC4[0].visit_date;
+    const c4sOnDate = c4s.filter((v: any) => v.visit_date === earliestDate);
+    const contentLength = (v: any) => [v.impression_diagnosis, v.rendering_provider, v.imaging_findings, v.hpi_summary, v.treatment_plan].map((s: any) => (s || '').trim()).join('').length;
+    const keepC4 = c4sOnDate.sort((a: any, b: any) => contentLength(b) - contentLength(a))[0];
+    return visitList.map((v: any) => {
+      if (isC4(v) && v !== keepC4) {
+        const cleaned = { ...v };
+        cleaned.practice_setting = (cleaned.practice_setting || '').replace(/c-4 workers'? compensation report/i, '').replace(/\(c-4 report\)/i, '').trim() || 'Office Visit';
+        return cleaned;
+      }
+      return v;
+    });
+  };
+
+  // ── PT collapse helpers (for export) ────────────────────────────────────
+  const isPTVisit = (v: any): boolean => {
+    const s = (v.practice_setting || '').toLowerCase();
+    return s.includes('physical therapy') || s.includes('occupational therapy') || s.includes('physio') || s === 'pt' || s.includes(' pt ') || s.includes('rehabilitation') || s.includes('hand therapy') || (s.includes('sport') && s.includes('rehab'));
+  };
+
+  const buildVisitList = (visits: any[], collapse: boolean): any[] => {
+    if (!collapse) return visits;
+    const ptGroups: any = {};
+    visits.forEach((v: any, idx: number) => {
+      if (!isPTVisit(v)) return;
+      const key = normalizePTSetting(v.practice_setting || 'pt').toLowerCase().trim();
+      if (!ptGroups[key]) ptGroups[key] = [];
+      ptGroups[key].push(idx);
+    });
+    const bridgedIndices = new Set<number>();
+    const bridgeInsertAfter: any = {};
+    Object.values(ptGroups).forEach((indices: any) => {
+      if (indices.length <= 2) return;
+      const first = indices[0];
+      indices.slice(1, -1).forEach((i: number) => bridgedIndices.add(i));
+      bridgeInsertAfter[first] = { _ptBridge: true, _ptCount: indices.length - 2, _ptProvider: visits[first].practice_setting || 'Physical/Occupational Therapy' };
+    });
+    const result: any[] = [];
+    visits.forEach((v: any, i: number) => {
+      if (bridgedIndices.has(i)) return;
+      result.push(v);
+      if (bridgeInsertAfter[i]) result.push(bridgeInsertAfter[i]);
+    });
+    return result;
+  };
+
+  // Sanitize visits — full v5 logic: exclusions, C-4 dedup, ER date fix, field normalization
+  const sanitizeVisits = (visits: any[], patientName: string = ''): any[] => {
     const stringFields = ['visit_date','rendering_provider','practice_setting','chief_complaint',
       'hpi_summary','injury_date','pain_scale','symptom_progression','physical_exam_findings',
       'imaging_findings','lab_findings','impression_diagnosis','treatment_plan'];
-    return (visits || []).map((visit: any) => {
+    const validProgressions = ['improved','same','worse','not_documented'];
+
+    return enforceOneC4((visits || []).filter((visit: any) => !isExcluded(visit))).map((visit: any) => {
       const clean: any = {};
-      stringFields.forEach(field => {
+      stringFields.forEach((field: string) => {
         const val = visit[field];
         if (val === null || val === undefined || val === false) clean[field] = '';
         else if (typeof val === 'object') clean[field] = JSON.stringify(val);
@@ -510,6 +689,26 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
       });
       if (!Array.isArray(visit.icd10_codes)) clean.icd10_codes = [];
       else clean.icd10_codes = visit.icd10_codes;
+      // Normalize all-caps provider names from OCR
+      if (clean.rendering_provider) clean.rendering_provider = toTitleCase(clean.rendering_provider);
+      // Normalize PT facility names
+      if (clean.practice_setting) clean.practice_setting = normalizePTSetting(clean.practice_setting);
+      if (!validProgressions.includes(clean.symptom_progression)) clean.symptom_progression = 'not_documented';
+      // Strip patient name from practice_setting (OCR artifact)
+      const patientLower = patientName?.toLowerCase();
+      if (clean.practice_setting && patientLower && clean.practice_setting.toLowerCase().includes(patientLower)) {
+        clean.practice_setting = '';
+      }
+      // Strip street addresses from practice_setting
+      if (clean.practice_setting) {
+        clean.practice_setting = clean.practice_setting
+          .replace(/,\s*\d+\s+[A-Za-z].*$/, '')
+          .replace(/\s*\d{5}(?:-\d{4})?\s*$/, '')
+          .replace(/,\s*(?:Ste|Suite|Floor|Fl|Bldg|Building|Unit|#)\s*[\w-]+\s*$/i, '')
+          .trim().replace(/,\s*$/, '');
+      }
+      // Fix ER visits where Bedrock used injury_date as visit_date
+      if (isLikelyMisdatedER(clean)) clean.visit_date = addOneDay(clean.injury_date);
       return clean;
     });
   };
@@ -571,9 +770,10 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
       // â”€â”€ Save summary record to DynamoDB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       try {
         // Sanitize visits to known fields only — keeps DynamoDB item under 400KB limit
-        const cleanVisits = sanitizeVisits(rawVisits);
+        const cleanVisits = sanitizeVisits(rawVisits, patientName);
         await awsProxy('/summaries', 'POST', {
           patient_name: patientName,
+          case_number: caseNumber,
           visits: cleanVisits,
           visit_count: cleanVisits.length,
           job_id: job_id,
@@ -587,7 +787,7 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
       queryClient.invalidateQueries({ queryKey: ["aws-summaries"] });
       genStore.set({
         running: false, statusMsg: "",
-        completionMsg: `Ã¢Å“â€œ Generated ${rawVisits.length} visits for ${patientName || 'patient'} in ${Math.floor(elapsed / 60)}m ${elapsed % 60}s`,
+        completionMsg: `✅ Generated ${rawVisits.length} visits for ${patientName || 'patient'} in ${Math.floor(elapsed / 60)}m ${elapsed % 60}s`,
       });
     } catch (err: any) {
       clearInterval(genStore.state.timerHandle);
@@ -631,10 +831,18 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
       return;
     }
 
-    const finalVisits = deduplicateVisits(sortedVisits);
+    const isPT = (v: any) => isPTVisit(v);
+    const hasPTVisits = sortedVisits.some(isPT);
+    const finalVisits = buildVisitList(deduplicateVisits(sortedVisits), hasPTVisits);
 
     try {
       const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle } = await import('docx');
+
+      const auditFooter = () => {
+        const now = new Date();
+        const pdt = now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles', month: '2-digit', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
+        return new Paragraph({ alignment: AlignmentType.LEFT, spacing: { before: 300 }, children: [new TextRun({ text: \`ChartReview Pro  |  Generated: \${pdt} PDT\`, size: 14, color: '9CA3AF', font: FONT })] });
+      };
 
       const FONT = 'Calibri';
       const SIZE = 22;     // 11pt in half-points
@@ -759,6 +967,7 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
 
       sections_content.push(emptyPara());
       sections_content.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [normal(`Generated by ChartReview Pro on ${new Date().toLocaleDateString()}`, SIZE_SM)] }));
+      sections_content.push(auditFooter());
 
       const doc = new Document({
         sections: [{ properties: { page: { margin: { top: 720, bottom: 720, left: 720, right: 720 } } }, children: sections_content }],
