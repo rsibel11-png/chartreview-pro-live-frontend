@@ -493,13 +493,6 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
   }, {});
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Generate summary Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-
-  const derivePatientName = (docs: any[]): string => {
-    const first = docs[0];
-    const rawName = first?._is_group ? (first?.file_name || first?.id || '') : (first?.file_name || '');
-    return rawName.replace(/_Part\d+/gi, '').replace(/\.pdf$/i, '').replace(/_/g, ' ').trim();
-  };
-
   const generateSummary = async () => {
     const selectedDocs = groupedDocuments
       .filter((d: any) => selectedDocuments.includes(d.id))
@@ -534,7 +527,7 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
       }
       genStore.set({ statusMsg: `Sending ${docIds.length} documents to ChartReview AI...` });
       const startRes = await awsProxy('/summaries/generate', 'POST', {
-        doc_ids: docIds, patient_name: derivePatientName(selectedDocs), run_vi_prepass: true,
+        doc_ids: docIds, patient_name: '', run_vi_prepass: true,
       });
       const job_id = startRes?.job_id;
       if (!job_id) throw new Error('No job_id returned from generateSummaryStart');
