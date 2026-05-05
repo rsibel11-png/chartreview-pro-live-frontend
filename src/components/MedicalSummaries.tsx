@@ -493,6 +493,27 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
   }, {});
 
   // Ã¢â€â‚¬Ã¢â€â‚¬ Generate summary Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // Sanitize visits to only the known string fields — prevents DynamoDB 400KB limit
+  // (matches v5 MedicalSummaries sanitizeVisits logic)
+  const sanitizeVisits = (visits: any[]): any[] => {
+    const stringFields = ['visit_date','rendering_provider','practice_setting','chief_complaint',
+      'hpi_summary','injury_date','pain_scale','symptom_progression','physical_exam_findings',
+      'imaging_findings','lab_findings','impression_diagnosis','treatment_plan'];
+    return (visits || []).map((visit: any) => {
+      const clean: any = {};
+      stringFields.forEach(field => {
+        const val = visit[field];
+        if (val === null || val === undefined || val === false) clean[field] = '';
+        else if (typeof val === 'object') clean[field] = JSON.stringify(val);
+        else if (typeof val !== 'string') clean[field] = String(val);
+        else clean[field] = val;
+      });
+      if (!Array.isArray(visit.icd10_codes)) clean.icd10_codes = [];
+      else clean.icd10_codes = visit.icd10_codes;
+      return clean;
+    });
+  };
+
   const generateSummary = async () => {
     const selectedDocs = groupedDocuments
       .filter((d: any) => selectedDocuments.includes(d.id))
@@ -549,18 +570,12 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
       genStore.set({ timerHandle: null });
       // â”€â”€ Save summary record to DynamoDB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       try {
-        // Strip visit narratives to avoid DynamoDB 400KB item limit.
-        // Only save metadata â full visits are loaded from job result on demand.
-        const visitsMeta = rawVisits.map((v: any) => ({
-          visit_date: v.visit_date || v.date || '',
-          provider: v.provider || '',
-          facility: v.facility || '',
-          diagnosis: Array.isArray(v.diagnosis) ? v.diagnosis.slice(0, 3) : (v.diagnosis || ''),
-        }));
+        // Sanitize visits to known fields only — keeps DynamoDB item under 400KB limit
+        const cleanVisits = sanitizeVisits(rawVisits);
         await awsProxy('/summaries', 'POST', {
           patient_name: patientName,
-          visits: visitsMeta,
-          visit_count: rawVisits.length,
+          visits: cleanVisits,
+          visit_count: cleanVisits.length,
           job_id: job_id,
           status: 'complete',
           org_id: ORG_ID,
