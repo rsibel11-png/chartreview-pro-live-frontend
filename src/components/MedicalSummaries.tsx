@@ -496,90 +496,86 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
 
   // ── LLM extraction prompt (full production version matching v5) ──────────
   const buildPrompt = (rawChunkText: string, docCount: number, chunkLabel: string = '', knownVisitsChecklist: any[] = [], skipPages: number[] = []): string => {
-    const chunkText = String(rawChunkText || '').replace(/\`/g, "'").split('${').join('(');
-    return \`You are a medical-legal document analyst. Your job is to extract EVERY clinical encounter from this document including but not limited to:
-- Emergency Room (ER) visits
-- Urgent Care visits  
-- Private or group physician office visits (orthopedic, neurology, pain management, primary care, etc.)
-- Surgical visits and operative reports
-- Radiology center visits (MRI, CT, X-ray, ultrasound reports)
-- Physical Therapy / Occupational Therapy sessions
-- Chiropractic visits
-- Ambulance / EMS reports
-- C-4 Workers Compensation forms
-- IME / Expert reports / Chart reviews
-- Hospital admissions and discharge summaries
-- Any other clinical or medical-legal encounter
-
-\${skipPages.length > 0 ? \`SKIP PAGES: The following page numbers contain non-clinical content -- do NOT extract visits from pages: \${skipPages.join(', ')}.\n\` : ''}
-DO NOT skip any encounter type. Every date with a provider interaction is a separate entry.
-
-\${chunkText ? \`DOCUMENT TEXT\${chunkLabel}:\n\${chunkText}\n\` : ''}DOCUMENT TYPE HANDLING:
-
-A) OFFICE VISIT / CLINICAL NOTES: Extract each visit as a separate entry. CRITICAL: Always extract the actual practice setting/facility name. NEVER label as simply "Office Visit" -- use the specific facility name from the document header, letterhead, or provider section.
-
-B) EXPERT MEDICAL REPORTS / IME / CHART REVIEWS / RADIOLOGY: Use the EXACT document type as labeled. Examples: "Independent Medical Examination", "Consultation Report", "Chart Review", "Narrative Report", "Agreed Medical Examination", "Qualified Medical Evaluation". For radiology: use the imaging facility name if present.
-
-C) POLICE REPORTS: practice_setting: "Police Report". Extract incident narrative, officer observations, conclusions.
-
-D) AMBULANCE / EMS REPORTS: practice_setting: "Ambulance / EMS Report". Extract scene narrative, vitals, treatment administered.
-
-E) C-4 FORMS: STRICT IDENTIFICATION -- only label as C-4 if the actual WCB Form C-4 text is physically present AND the date is at or near the earliest date in the document set. ONE C-4 per case. practice_setting: "C-4 Workers Compensation Report".
-
-CRITICAL DATE ACCURACY:
-- visit_date MUST be the DATE OF SERVICE -- NOT injury date, NOT report date
-- For ER visits: service date is typically ONE DAY AFTER injury date for overnight incidents
-- The visit_date appears in the DOCUMENT HEADER, not in the HPI narrative
-- "Date of Injury" mentioned in HPI is NEVER the visit_date
-
-For EACH entry extract:
-1. visit_date (YYYY-MM-DD)
-2. rendering_provider (doctor name only)
-3. practice_setting (specific facility name)
-4. chief_complaint (brief visit purpose)
-5. hpi_summary (3-5 sentences: key symptoms, pain scale, mechanism, progression)
-6. physical_exam_findings (key pertinent positives only, 3-5 findings max)
-7. imaging_findings (ONLY if performed THIS visit)
-8. lab_findings (ONLY if performed THIS visit)
-9. impression_diagnosis (with ICD-10 codes if provided)
-10. treatment_plan (2-4 key points: interventions, restrictions, follow-up)
-
-CRITICAL EXTRACTION RULES:
-(1) Extract EVERY clinical encounter -- do NOT skip any.
-(2) For every non-PT visit, MUST populate hpi_summary, impression_diagnosis, treatment_plan if info exists.
-(3) NEVER return a visit with all content fields empty unless it is truly just a C-4 form.
-(4) NEVER hallucinate -- only use information explicitly in the text.
-(5) Every field must be a plain text string. NEVER return null, arrays, or objects for text fields.
-(6) If information is truly not available, return "".
-(7) icd10_codes must always be an array of strings (can be []).
-(8) PT/OT: Extract EVERY individual session as its own separate record. Each visit date = one record.
-(9) For PT visits: practice_setting should be the full facility name.
-
-Return ALL entries in the visits array. Also extract: patient_name, case_number.\` + (knownVisitsChecklist.length > 0 ? ('\n\nKNOWN VISIT CHECKLIST (pre-pass):\nThe following clinical encounters are known to exist. Scan carefully for each:\n' + knownVisitsChecklist.map((v: any) => \`- \${v.date} | \${v.provider} | \${v.facility} | \${v.visit_type}\`).join('\n') + '\n\nIf a listed visit is NOT found in the current documents, omit it -- it may be in a different batch.') : '');
+    const chunkText = String(rawChunkText || '').replace(/`/g, "'").split('${').join('(');
+    const skipSection = skipPages.length > 0
+      ? 'SKIP PAGES: The following page numbers contain non-clinical content -- do NOT extract visits from pages: ' + skipPages.join(', ') + '.\n'
+      : '';
+    const docSection = chunkText ? ('DOCUMENT TEXT' + chunkLabel + ':\n' + chunkText + '\n') : '';
+    const checklistSection = knownVisitsChecklist.length > 0
+      ? '\n\nKNOWN VISIT CHECKLIST (pre-pass):\nThe following clinical encounters are known to exist. Scan carefully for each:\n'
+        + knownVisitsChecklist.map((v: any) => '- ' + v.date + ' | ' + v.provider + ' | ' + v.facility + ' | ' + v.visit_type).join('\n')
+        + '\n\nIf a listed visit is NOT found in the current documents, omit it -- it may be in a different batch.'
+      : '';
+    return 'You are a medical-legal document analyst. Your job is to extract EVERY clinical encounter from this document including but not limited to:\n'
+      + '- Emergency Room (ER) visits\n'
+      + '- Urgent Care visits\n'
+      + '- Private or group physician office visits (orthopedic, neurology, pain management, primary care, etc.)\n'
+      + '- Surgical visits and operative reports\n'
+      + '- Radiology center visits (MRI, CT, X-ray, ultrasound reports)\n'
+      + '- Physical Therapy / Occupational Therapy sessions\n'
+      + '- Chiropractic visits\n'
+      + '- Ambulance / EMS reports\n'
+      + "- C-4 Workers' Compensation forms\n"
+      + '- IME / Expert reports / Chart reviews\n'
+      + '- Hospital admissions and discharge summaries\n'
+      + '- Any other clinical or medical-legal encounter\n\n'
+      + skipSection
+      + 'DO NOT skip any encounter type. Every date with a provider interaction is a separate entry.\n\n'
+      + docSection
+      + 'DOCUMENT TYPE HANDLING:\n\n'
+      + 'A) OFFICE VISIT / CLINICAL NOTES: Extract each visit as a separate entry. CRITICAL: Always extract the actual practice setting/facility name. NEVER label as simply "Office Visit" -- use the specific facility name from the document header, letterhead, or provider section.\n\n'
+      + 'B) EXPERT MEDICAL REPORTS / IME / CHART REVIEWS / RADIOLOGY: Use the EXACT document type as labeled. Examples: "Independent Medical Examination", "Consultation Report", "Chart Review", "Narrative Report", "Agreed Medical Examination", "Qualified Medical Evaluation". For radiology: use the imaging facility name if present.\n\n'
+      + 'C) POLICE REPORTS: practice_setting: "Police Report". Extract incident narrative, officer observations, conclusions.\n\n'
+      + 'D) AMBULANCE / EMS REPORTS: practice_setting: "Ambulance / EMS Report". Extract scene narrative, vitals, treatment administered.\n\n'
+      + "E) C-4 FORMS: STRICT IDENTIFICATION -- only label as C-4 if the actual WCB Form C-4 text is physically present AND the date is at or near the earliest date in the document set. ONE C-4 per case. practice_setting: \"C-4 Workers' Compensation Report\".\n\n"
+      + 'CRITICAL DATE ACCURACY:\n'
+      + '- visit_date MUST be the DATE OF SERVICE -- NOT injury date, NOT report date\n'
+      + '- For ER visits: service date is typically ONE DAY AFTER injury date for overnight incidents\n'
+      + '- The visit_date appears in the DOCUMENT HEADER, not in the HPI narrative\n'
+      + '- "Date of Injury" mentioned in HPI is NEVER the visit_date\n\n'
+      + 'For EACH entry extract:\n'
+      + '1. visit_date (YYYY-MM-DD)\n'
+      + '2. rendering_provider (doctor name only)\n'
+      + '3. practice_setting (specific facility name)\n'
+      + '4. chief_complaint (brief visit purpose)\n'
+      + '5. hpi_summary (3-5 sentences: key symptoms, pain scale, mechanism, progression)\n'
+      + '6. physical_exam_findings (key pertinent positives only, 3-5 findings max)\n'
+      + '7. imaging_findings (ONLY if performed THIS visit)\n'
+      + '8. lab_findings (ONLY if performed THIS visit)\n'
+      + '9. impression_diagnosis (with ICD-10 codes if provided)\n'
+      + '10. treatment_plan (2-4 key points: interventions, restrictions, follow-up)\n\n'
+      + 'CRITICAL EXTRACTION RULES:\n'
+      + '(1) Extract EVERY clinical encounter -- do NOT skip any.\n'
+      + '(2) For every non-PT visit, MUST populate hpi_summary, impression_diagnosis, treatment_plan if info exists.\n'
+      + '(3) NEVER return a visit with all content fields empty unless it is truly just a C-4 form.\n'
+      + '(4) NEVER hallucinate -- only use information explicitly in the text.\n'
+      + '(5) Every field must be a plain text string. NEVER return null, arrays, or objects for text fields.\n'
+      + '(6) If information is truly not available, return "".\n'
+      + '(7) icd10_codes must always be an array of strings (can be []).\n'
+      + '(8) PT/OT: Extract EVERY individual session as its own separate record. Each visit date = one record.\n'
+      + '(9) For PT visits: practice_setting should be the full facility name.\n\n'
+      + 'Return ALL entries in the visits array. Also extract: patient_name, case_number.'
+      + checklistSection;
   };
 
   // ── Visit Index prompt ───────────────────────────────────────────────────
   const buildVisitIndexPrompt = (): string => {
-    return \`You are reviewing medical-legal documents. Your ONLY task is to extract a complete list of every clinical encounter date, provider name, and facility/location.
-
-For each clinical encounter found, extract:
-1. date - the date of service (YYYY-MM-DD format). PRIMARY SOURCE: the document header or note title. NEVER use the injury date or any date mentioned inside the HPI narrative.
-2. provider - the treating provider's name and credentials (e.g. "Arthur J. Taylor, MD")
-3. facility - the facility or practice name (e.g. "Nevada Orthopedic & Spine Center")
-4. visit_type - a brief label: "Office Visit", "ER Visit", "Surgery", "Physical Therapy", "Radiology", "C-4 Form", "IME", "Chiropractic", etc.
-
-RULES:
-- Include EVERY encounter -- office visits, ER, surgery, PT/OT, radiology, C-4 forms, IMEs, ambulance, etc.
-- Each unique date + provider combination is a separate entry.
-- Do NOT include administrative documents (therapy orders, authorization requests, appointment reminders, fax covers).
-- CRITICAL: The HPI section often mentions the date of injury -- this is NOT the visit date.
-- The visit date is ALWAYS in the document header (e.g. "Visit Note November 7, 2022").
-- Keep it fast and simple -- no clinical content needed, just date/provider/facility/type.
-- If a date appears in a document header but no provider is identifiable, still include the entry with provider as "Not Documented".
-
-Return all entries in the visits array.\`;
+    return 'You are reviewing medical-legal documents. Your ONLY task is to extract a complete list of every clinical encounter date, provider name, and facility/location.\n\n'
+      + 'For each clinical encounter found, extract:\n'
+      + '1. date - the date of service (YYYY-MM-DD format). PRIMARY SOURCE: the document header or note title. NEVER use the injury date or any date mentioned inside the HPI narrative.\n'
+      + '2. provider - the treating provider name and credentials (e.g. "Arthur J. Taylor, MD")\n'
+      + '3. facility - the facility or practice name (e.g. "Nevada Orthopedic & Spine Center")\n'
+      + '4. visit_type - a brief label: "Office Visit", "ER Visit", "Surgery", "Physical Therapy", "Radiology", "C-4 Form", "IME", "Chiropractic", etc.\n\n'
+      + 'RULES:\n'
+      + '- Include EVERY encounter -- office visits, ER, surgery, PT/OT, radiology, C-4 forms, IMEs, ambulance, etc.\n'
+      + '- Each unique date + provider combination is a separate entry.\n'
+      + '- Do NOT include administrative documents.\n'
+      + '- CRITICAL: The HPI section often mentions the date of injury -- this is NOT the visit date.\n'
+      + '- The visit date is ALWAYS in the document header.\n'
+      + '- Keep it fast and simple -- no clinical content needed, just date/provider/facility/type.\n'
+      + '- If a date appears in a document header but no provider is identifiable, still include the entry with provider as "Not Documented".\n\n'
+      + 'Return all entries in the visits array.';
   };
-
   // ── Provider/setting normalizers ─────────────────────────────────────────
   const toTitleCase = (str: string): string => {
     if (!str) return str;
@@ -597,7 +593,7 @@ Return all entries in the visits array.\`;
   const isExcluded = (visit: any): boolean => {
     const setting = (visit.practice_setting || '').toLowerCase();
     if (setting.includes('c-4') || setting.includes('workers') || setting.includes('wcb')) return false;
-    const combined = \`\${visit.practice_setting || ''} \${visit.rendering_provider || ''} \${visit.chief_complaint || ''}\`;
+    const combined = (visit.practice_setting || '') + ' ' + (visit.rendering_provider || '') + ' ' + (visit.chief_complaint || '');
     return EXCLUDED_PATTERNS.some((rx: RegExp) => rx.test(combined));
   };
 
@@ -612,7 +608,7 @@ Return all entries in the visits array.\`;
   const addOneDay = (dateStr: string): string => {
     const [y, m, day] = dateStr.split('-').map(Number);
     const dt = new Date(y, m - 1, day + 1);
-    return \`\${dt.getFullYear()}-\${String(dt.getMonth() + 1).padStart(2, '0')}-\${String(dt.getDate()).padStart(2, '0')}\`;
+    return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
   };
 
   const enforceOneC4 = (visitList: any[]): any[] => {
@@ -841,7 +837,7 @@ Return all entries in the visits array.\`;
       const auditFooter = () => {
         const now = new Date();
         const pdt = now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles', month: '2-digit', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
-        return new Paragraph({ alignment: AlignmentType.LEFT, spacing: { before: 300 }, children: [new TextRun({ text: \`ChartReview Pro  |  Generated: \${pdt} PDT\`, size: 14, color: '9CA3AF', font: FONT })] });
+        return new Paragraph({ alignment: AlignmentType.LEFT, spacing: { before: 300 }, children: [new TextRun({ text: 'ChartReview Pro  |  Generated: ' + pdt + ' PDT', size: 14, color: '9CA3AF', font: FONT })] });
       };
 
       const FONT = 'Calibri';
