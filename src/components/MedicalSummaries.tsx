@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-// MedicalSummaries.tsx Ã¢â‚¬â€ chartreview-native-frontend
-// Ported: 2026-05-03 Ã¢â‚¬â€ CRA/TypeScript port of MedicalSummaries v56
+// MedicalSummaries.tsx — chartreview-native-frontend
+// Ported: 2026-05-03 — CRA/TypeScript port of MedicalSummaries v56
 // Fixes: env vars, no base44 imports, all callbacks typed, opts:any,
 //        Array.from for Set spreads, Object.entries typed, MedicalSummaryForm/SummaryViewer inlined as stubs
 
@@ -10,12 +10,11 @@ import { Loader2 } from "lucide-react";
 import MedicalSummaryForm from "./summaries/MedicalSummaryForm";
 import SummaryViewer from "./summaries/SummaryViewer";
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Env vars (CRA) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ── Env vars (CRA) ────────────────────────────────────────────────────────────
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || "https://1h4kpspbs6.execute-api.us-east-1.amazonaws.com/prod";
 const ORG_ID      = process.env.REACT_APP_ORG_ID      || "69ceb1ab037acdd4467b31c3";
-const API_KEY     = process.env.REACT_APP_AWS_API_KEY  || "";
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Date formatter Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ── Date formatter ────────────────────────────────────────────────────────────
 const formatVisitDate = (dateStr: string) => {
   if (!dateStr) return '';
   const parts = dateStr.split('-').map(Number);
@@ -25,7 +24,7 @@ const formatVisitDate = (dateStr: string) => {
   return dateStr;
 };
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Inlined UI primitives Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ── Inlined UI primitives ─────────────────────────────────────────────────────
 function Button({ children, onClick, disabled, className = "", variant = "default", size = "default", title }: {
   children: React.ReactNode; onClick?: () => void; disabled?: boolean;
   className?: string; variant?: string; size?: string; title?: string;
@@ -136,7 +135,7 @@ function Checkbox({ checked, onCheckedChange, onClick, className = "" }: {
   );
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Icon stubs Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ── Icon stubs ────────────────────────────────────────────────────────────────
 const FileCheck = ({ className = "" }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
@@ -225,7 +224,7 @@ const Save = ({ className = "" }) => (
 
 
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Module-level generation store Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ── Module-level generation store ─────────────────────────────────────────────
 const genStore: any = {
   state: {
     running: false, statusMsg: "", completionMsg: "", error: null,
@@ -240,7 +239,7 @@ const genStore: any = {
   },
 };
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Main component Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// ── Main component ────────────────────────────────────────────────────────────
 export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?: (page: string) => void; idToken?: string }) {
   const queryClient = useQueryClient();
 
@@ -258,7 +257,6 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
     const url = `${AWS_API_URL}${path}`;
     const opts: any = {
       method,
-      "x-api-key": API_KEY,
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getFreshToken()}`, "x-org-id": ORG_ID },
     };
     if (data !== undefined) opts.body = JSON.stringify(data);
@@ -268,9 +266,8 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
     return json;
   };
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ State Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── State ──────────────────────────────────────────────────────────────────
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
-  const [caseNumber, setCaseNumber] = useState<string>('');
   const [viewingSummary, setViewingSummary] = useState<any>(null);
   const [editingSummary, setEditingSummary] = useState<any>(null);
   const [deleteSummary, setDeleteSummary] = useState<any>(null);
@@ -309,13 +306,12 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
   const elapsedSeconds = genState.elapsedSeconds;
   const setError = (msg: string | null) => genStore.set({ error: msg });
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Queries Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Queries ────────────────────────────────────────────────────────────────
   const { data: documents = [], isLoading: documentsLoading } = useQuery({
     queryKey: ["aws-documents"],
     queryFn: async () => {
       const res = await fetch(`${AWS_API_URL}/documents`, {
         method: "GET",
-        "x-api-key": API_KEY,
         headers: { "Authorization": `Bearer ${getFreshToken()}`, "x-org-id": ORG_ID },
       });
       if (!res.ok) throw new Error("Failed to fetch documents");
@@ -342,7 +338,7 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
   });
   const summaries: any[] = Array.isArray(summariesRaw) ? summariesRaw : [];
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Mutations Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Mutations ──────────────────────────────────────────────────────────────
   const deleteMutation = useMutation({
     mutationFn: (id: any) => awsProxy(`/summaries/${id}`, "DELETE"),
     onSuccess: () => {
@@ -379,7 +375,7 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
     },
   });
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Helpers Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Helpers ────────────────────────────────────────────────────────────────
   const normalizePTSetting = (setting: string) => {
     if (!setting) return setting;
     let s = setting.trim();
@@ -454,7 +450,7 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
     );
   };
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Grouped documents (same logic as Library) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Grouped documents (same logic as Library) ──────────────────────────────
   const groupedDocuments: any[] = (() => {
     const shellMap: any = {};
     const grouped: any = {};
@@ -496,223 +492,7 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
     return acc;
   }, {});
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Generate summary Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
-
-  // ── LLM extraction prompt (full production version matching v5) ──────────
-  const buildPrompt = (rawChunkText: string, docCount: number, chunkLabel: string = '', knownVisitsChecklist: any[] = [], skipPages: number[] = []): string => {
-    const chunkText = String(rawChunkText || '').replace(/`/g, "'").split('${').join('(');
-    const skipSection = skipPages.length > 0
-      ? 'SKIP PAGES: The following page numbers contain non-clinical content -- do NOT extract visits from pages: ' + skipPages.join(', ') + '.\n'
-      : '';
-    const docSection = chunkText ? ('DOCUMENT TEXT' + chunkLabel + ':\n' + chunkText + '\n') : '';
-    const checklistSection = knownVisitsChecklist.length > 0
-      ? '\n\nKNOWN VISIT CHECKLIST (pre-pass):\nThe following clinical encounters are known to exist. Scan carefully for each:\n'
-        + knownVisitsChecklist.map((v: any) => '- ' + v.date + ' | ' + v.provider + ' | ' + v.facility + ' | ' + v.visit_type).join('\n')
-        + '\n\nIf a listed visit is NOT found in the current documents, omit it -- it may be in a different batch.'
-      : '';
-    return 'You are a medical-legal document analyst. Your job is to extract EVERY clinical encounter from this document including but not limited to:\n'
-      + '- Emergency Room (ER) visits\n'
-      + '- Urgent Care visits\n'
-      + '- Private or group physician office visits (orthopedic, neurology, pain management, primary care, etc.)\n'
-      + '- Surgical visits and operative reports\n'
-      + '- Radiology center visits (MRI, CT, X-ray, ultrasound reports)\n'
-      + '- Physical Therapy / Occupational Therapy sessions\n'
-      + '- Chiropractic visits\n'
-      + '- Ambulance / EMS reports\n'
-      + "- C-4 Workers' Compensation forms\n"
-      + '- IME / Expert reports / Chart reviews\n'
-      + '- Hospital admissions and discharge summaries\n'
-      + '- Any other clinical or medical-legal encounter\n\n'
-      + skipSection
-      + 'DO NOT skip any encounter type. Every date with a provider interaction is a separate entry.\n\n'
-      + docSection
-      + 'DOCUMENT TYPE HANDLING:\n\n'
-      + 'A) OFFICE VISIT / CLINICAL NOTES: Extract each visit as a separate entry. CRITICAL: Always extract the actual practice setting/facility name. NEVER label as simply "Office Visit" -- use the specific facility name from the document header, letterhead, or provider section.\n\n'
-      + 'B) EXPERT MEDICAL REPORTS / IME / CHART REVIEWS / RADIOLOGY: Use the EXACT document type as labeled. Examples: "Independent Medical Examination", "Consultation Report", "Chart Review", "Narrative Report", "Agreed Medical Examination", "Qualified Medical Evaluation". For radiology: use the imaging facility name if present.\n\n'
-      + 'C) POLICE REPORTS: practice_setting: "Police Report". Extract incident narrative, officer observations, conclusions.\n\n'
-      + 'D) AMBULANCE / EMS REPORTS: practice_setting: "Ambulance / EMS Report". Extract scene narrative, vitals, treatment administered.\n\n'
-      + "E) C-4 FORMS: STRICT IDENTIFICATION -- only label as C-4 if the actual WCB Form C-4 text is physically present AND the date is at or near the earliest date in the document set. ONE C-4 per case. practice_setting: \"C-4 Workers' Compensation Report\".\n\n"
-      + 'CRITICAL DATE ACCURACY:\n'
-      + '- visit_date MUST be the DATE OF SERVICE -- NOT injury date, NOT report date\n'
-      + '- For ER visits: service date is typically ONE DAY AFTER injury date for overnight incidents\n'
-      + '- The visit_date appears in the DOCUMENT HEADER, not in the HPI narrative\n'
-      + '- "Date of Injury" mentioned in HPI is NEVER the visit_date\n\n'
-      + 'For EACH entry extract:\n'
-      + '1. visit_date (YYYY-MM-DD)\n'
-      + '2. rendering_provider (doctor name only)\n'
-      + '3. practice_setting (specific facility name)\n'
-      + '4. chief_complaint (brief visit purpose)\n'
-      + '5. hpi_summary (3-5 sentences: key symptoms, pain scale, mechanism, progression)\n'
-      + '6. physical_exam_findings (key pertinent positives only, 3-5 findings max)\n'
-      + '7. imaging_findings (ONLY if performed THIS visit)\n'
-      + '8. lab_findings (ONLY if performed THIS visit)\n'
-      + '9. impression_diagnosis (with ICD-10 codes if provided)\n'
-      + '10. treatment_plan (2-4 key points: interventions, restrictions, follow-up)\n\n'
-      + 'CRITICAL EXTRACTION RULES:\n'
-      + '(1) Extract EVERY clinical encounter -- do NOT skip any.\n'
-      + '(2) For every non-PT visit, MUST populate hpi_summary, impression_diagnosis, treatment_plan if info exists.\n'
-      + '(3) NEVER return a visit with all content fields empty unless it is truly just a C-4 form.\n'
-      + '(4) NEVER hallucinate -- only use information explicitly in the text.\n'
-      + '(5) Every field must be a plain text string. NEVER return null, arrays, or objects for text fields.\n'
-      + '(6) If information is truly not available, return "".\n'
-      + '(7) icd10_codes must always be an array of strings (can be []).\n'
-      + '(8) PT/OT: Extract EVERY individual session as its own separate record. Each visit date = one record.\n'
-      + '(9) For PT visits: practice_setting should be the full facility name.\n\n'
-      + 'Return ALL entries in the visits array. Also extract: patient_name, case_number.'
-      + checklistSection;
-  };
-
-  // ── Visit Index prompt ───────────────────────────────────────────────────
-  const buildVisitIndexPrompt = (): string => {
-    return 'You are reviewing medical-legal documents. Your ONLY task is to extract a complete list of every clinical encounter date, provider name, and facility/location.\n\n'
-      + 'For each clinical encounter found, extract:\n'
-      + '1. date - the date of service (YYYY-MM-DD format). PRIMARY SOURCE: the document header or note title. NEVER use the injury date or any date mentioned inside the HPI narrative.\n'
-      + '2. provider - the treating provider name and credentials (e.g. "Arthur J. Taylor, MD")\n'
-      + '3. facility - the facility or practice name (e.g. "Nevada Orthopedic & Spine Center")\n'
-      + '4. visit_type - a brief label: "Office Visit", "ER Visit", "Surgery", "Physical Therapy", "Radiology", "C-4 Form", "IME", "Chiropractic", etc.\n\n'
-      + 'RULES:\n'
-      + '- Include EVERY encounter -- office visits, ER, surgery, PT/OT, radiology, C-4 forms, IMEs, ambulance, etc.\n'
-      + '- Each unique date + provider combination is a separate entry.\n'
-      + '- Do NOT include administrative documents.\n'
-      + '- CRITICAL: The HPI section often mentions the date of injury -- this is NOT the visit date.\n'
-      + '- The visit date is ALWAYS in the document header.\n'
-      + '- Keep it fast and simple -- no clinical content needed, just date/provider/facility/type.\n'
-      + '- If a date appears in a document header but no provider is identifiable, still include the entry with provider as "Not Documented".\n\n'
-      + 'Return all entries in the visits array.';
-  };
-  // ── Provider/setting normalizers ─────────────────────────────────────────
-  const toTitleCase = (str: string): string => {
-    if (!str) return str;
-    const letters = str.replace(/[^a-zA-Z]/g, '');
-    if (letters.length > 2 && letters === letters.toUpperCase()) {
-      const credentials = new Set(['MD', 'DO', 'PA', 'NP', 'RN', 'LPN', 'PT', 'OT', 'DC', 'DDS', 'DMD', 'DPM', 'PHD', 'APRN', 'LCSW', 'OTR', 'ATC', 'EMT', 'RPA']);
-      return str.replace(/[A-Z]+/g, (word: string) => credentials.has(word) ? word : word.charAt(0) + word.slice(1).toLowerCase());
-    }
-    return str;
-  };
-
-  // ── Sanitize helpers (full v5 logic) ─────────────────────────────────────
-  const EXCLUDED_PATTERNS = [/pacu/i, /post.?anesthesia/i, /anesthesia\s+record/i, /pre.?op\s+nursing/i, /perioperative\s+nursing/i, /nursing\s+document/i, /preop\s+nursing/i];
-
-  const isExcluded = (visit: any): boolean => {
-    const setting = (visit.practice_setting || '').toLowerCase();
-    if (setting.includes('c-4') || setting.includes('workers') || setting.includes('wcb')) return false;
-    const combined = (visit.practice_setting || '') + ' ' + (visit.rendering_provider || '') + ' ' + (visit.chief_complaint || '');
-    return EXCLUDED_PATTERNS.some((rx: RegExp) => rx.test(combined));
-  };
-
-  const isLikelyMisdatedER = (visit: any): boolean => {
-    if (!visit.visit_date || !visit.injury_date) return false;
-    if (visit.visit_date !== visit.injury_date) return false;
-    const settingLower = (visit.practice_setting || '').toLowerCase();
-    if (settingLower.includes('c-4') || settingLower.includes('workers') || settingLower.includes('wcb')) return false;
-    return true;
-  };
-
-  const addOneDay = (dateStr: string): string => {
-    const [y, m, day] = dateStr.split('-').map(Number);
-    const dt = new Date(y, m - 1, day + 1);
-    return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
-  };
-
-  const enforceOneC4 = (visitList: any[]): any[] => {
-    const isC4 = (v: any) => { const s = (v.practice_setting || '').toLowerCase(); return s.includes('c-4') || s.includes('wcb') || s.includes("workers' compensation report"); };
-    const c4s = visitList.filter(isC4);
-    if (c4s.length <= 1) return visitList;
-    const sortedC4 = [...c4s].sort((a: any, b: any) => {
-      if (!a.visit_date) return 1; if (!b.visit_date) return -1;
-      const diff = (a.visit_date || '').localeCompare(b.visit_date || '');
-      if (diff !== 0) return diff;
-      return (a.practice_setting || '').toLowerCase().includes('c-4') ? -1 : 1;
-    });
-    const earliestDate = sortedC4[0].visit_date;
-    const c4sOnDate = c4s.filter((v: any) => v.visit_date === earliestDate);
-    const contentLength = (v: any) => [v.impression_diagnosis, v.rendering_provider, v.imaging_findings, v.hpi_summary, v.treatment_plan].map((s: any) => (s || '').trim()).join('').length;
-    const keepC4 = c4sOnDate.sort((a: any, b: any) => contentLength(b) - contentLength(a))[0];
-    return visitList.map((v: any) => {
-      if (isC4(v) && v !== keepC4) {
-        const cleaned = { ...v };
-        cleaned.practice_setting = (cleaned.practice_setting || '').replace(/c-4 workers'? compensation report/i, '').replace(/\(c-4 report\)/i, '').trim() || 'Office Visit';
-        return cleaned;
-      }
-      return v;
-    });
-  };
-
-  // ── PT collapse helpers (for export) ────────────────────────────────────
-  const isPTVisit = (v: any): boolean => {
-    const s = (v.practice_setting || '').toLowerCase();
-    return s.includes('physical therapy') || s.includes('occupational therapy') || s.includes('physio') || s === 'pt' || s.includes(' pt ') || s.includes('rehabilitation') || s.includes('hand therapy') || (s.includes('sport') && s.includes('rehab'));
-  };
-
-  const buildVisitList = (visits: any[], collapse: boolean): any[] => {
-    if (!collapse) return visits;
-    const ptGroups: any = {};
-    visits.forEach((v: any, idx: number) => {
-      if (!isPTVisit(v)) return;
-      const key = normalizePTSetting(v.practice_setting || 'pt').toLowerCase().trim();
-      if (!ptGroups[key]) ptGroups[key] = [];
-      ptGroups[key].push(idx);
-    });
-    const bridgedIndices = new Set<number>();
-    const bridgeInsertAfter: any = {};
-    Object.values(ptGroups).forEach((indices: any) => {
-      if (indices.length <= 2) return;
-      const first = indices[0];
-      indices.slice(1, -1).forEach((i: number) => bridgedIndices.add(i));
-      bridgeInsertAfter[first] = { _ptBridge: true, _ptCount: indices.length - 2, _ptProvider: visits[first].practice_setting || 'Physical/Occupational Therapy' };
-    });
-    const result: any[] = [];
-    visits.forEach((v: any, i: number) => {
-      if (bridgedIndices.has(i)) return;
-      result.push(v);
-      if (bridgeInsertAfter[i]) result.push(bridgeInsertAfter[i]);
-    });
-    return result;
-  };
-
-  // Sanitize visits — full v5 logic: exclusions, C-4 dedup, ER date fix, field normalization
-  const sanitizeVisits = (visits: any[], patientName: string = ''): any[] => {
-    const stringFields = ['visit_date','rendering_provider','practice_setting','chief_complaint',
-      'hpi_summary','injury_date','pain_scale','symptom_progression','physical_exam_findings',
-      'imaging_findings','lab_findings','impression_diagnosis','treatment_plan'];
-    const validProgressions = ['improved','same','worse','not_documented'];
-
-    return enforceOneC4((visits || []).filter((visit: any) => !isExcluded(visit))).map((visit: any) => {
-      const clean: any = {};
-      stringFields.forEach((field: string) => {
-        const val = visit[field];
-        if (val === null || val === undefined || val === false) clean[field] = '';
-        else if (typeof val === 'object') clean[field] = JSON.stringify(val);
-        else if (typeof val !== 'string') clean[field] = String(val);
-        else clean[field] = val;
-      });
-      if (!Array.isArray(visit.icd10_codes)) clean.icd10_codes = [];
-      else clean.icd10_codes = visit.icd10_codes;
-      // Normalize all-caps provider names from OCR
-      if (clean.rendering_provider) clean.rendering_provider = toTitleCase(clean.rendering_provider);
-      // Normalize PT facility names
-      if (clean.practice_setting) clean.practice_setting = normalizePTSetting(clean.practice_setting);
-      if (!validProgressions.includes(clean.symptom_progression)) clean.symptom_progression = 'not_documented';
-      // Strip patient name from practice_setting (OCR artifact)
-      const patientLower = patientName?.toLowerCase();
-      if (clean.practice_setting && patientLower && clean.practice_setting.toLowerCase().includes(patientLower)) {
-        clean.practice_setting = '';
-      }
-      // Strip street addresses from practice_setting
-      if (clean.practice_setting) {
-        clean.practice_setting = clean.practice_setting
-          .replace(/,\s*\d+\s+[A-Za-z].*$/, '')
-          .replace(/\s*\d{5}(?:-\d{4})?\s*$/, '')
-          .replace(/,\s*(?:Ste|Suite|Floor|Fl|Bldg|Building|Unit|#)\s*[\w-]+\s*$/i, '')
-          .trim().replace(/,\s*$/, '');
-      }
-      // Fix ER visits where Bedrock used injury_date as visit_date
-      if (isLikelyMisdatedER(clean)) clean.visit_date = addOneDay(clean.injury_date);
-      return clean;
-    });
-  };
-
+  // ── Generate summary ───────────────────────────────────────────────────────
   const generateSummary = async () => {
     const selectedDocs = groupedDocuments
       .filter((d: any) => selectedDocuments.includes(d.id))
@@ -767,27 +547,10 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
       const patientName: string = jobResult.patient_name || '';
       clearInterval(timerHandle);
       genStore.set({ timerHandle: null });
-      // â”€â”€ Save summary record to DynamoDB â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-      try {
-        // Sanitize visits to known fields only — keeps DynamoDB item under 400KB limit
-        const cleanVisits = sanitizeVisits(rawVisits, patientName);
-        await awsProxy('/summaries', 'POST', {
-          patient_name: patientName,
-          case_number: caseNumber,
-          visits: cleanVisits,
-          visit_count: cleanVisits.length,
-          job_id: job_id,
-          status: 'complete',
-          org_id: ORG_ID,
-        });
-      } catch (saveErr: any) {
-        console.error('Failed to save summary record:', saveErr);
-      }
-
       queryClient.invalidateQueries({ queryKey: ["aws-summaries"] });
       genStore.set({
         running: false, statusMsg: "",
-        completionMsg: `✅ Generated ${rawVisits.length} visits for ${patientName || 'patient'} in ${Math.floor(elapsed / 60)}m ${elapsed % 60}s`,
+        completionMsg: `✓ Generated ${rawVisits.length} visits for ${patientName || 'patient'} in ${Math.floor(elapsed / 60)}m ${elapsed % 60}s`,
       });
     } catch (err: any) {
       clearInterval(genStore.state.timerHandle);
@@ -795,25 +558,17 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
     }
   };
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Export to Word Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Export to Word ─────────────────────────────────────────────────────────
   const exportToWord = async (summary: any) => {
-    // Re-fetch full visits — prefer job_id result (raw narratives) over sanitized DynamoDB record
+    // Re-fetch fresh data
     let freshSummary = summary;
     try {
-      if (summary.job_id) {
-        const jobResult = await awsProxy(`/jobs/${summary.job_id}`, 'GET');
-        if (jobResult?.result?.visits?.length > 0) {
-          freshSummary = { ...summary, visits: jobResult.result.visits, patient_name: jobResult.result.patient_name || summary.patient_name };
-        }
-      } else {
-        const fetched = await awsProxy(`/summaries/${summary.aws_summary_id || summary.id}`, 'GET');
-        if (fetched && (Array.isArray(fetched.visits) ? fetched.visits.length > 0 : fetched.visits)) {
-          freshSummary = fetched;
-        }
+      const fetched = await awsProxy(`/summaries/${summary.aws_summary_id || summary.id}`, 'GET');
+      if (fetched && (Array.isArray(fetched.visits) ? fetched.visits.length > 0 : fetched.visits)) {
+        freshSummary = fetched;
       }
     } catch (_) {}
-
-    const sortedVisits: any[] = freshSummary.visits
+    const finalVisits: any[] = freshSummary.visits
       ? [...freshSummary.visits].sort((a: any, b: any) => {
           const da = (a.visit_date || '').trim();
           const db = (b.visit_date || '').trim();
@@ -825,170 +580,29 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
           return 0;
         })
       : [];
-
-    if (!sortedVisits.length) {
-      alert('This summary has no visits saved.');
+    if (!finalVisits.length) {
+      alert('This summary has no visits saved. Please open Edit, make any change, and Save Summary before exporting.');
       return;
     }
-
-    const isPT = (v: any) => isPTVisit(v);
-    const hasPTVisits = sortedVisits.some(isPT);
-    const finalVisits = buildVisitList(deduplicateVisits(sortedVisits), hasPTVisits);
-
-    try {
-      const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle } = await import('docx');
-
-      const auditFooter = () => {
-        const now = new Date();
-        const pdt = now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles', month: '2-digit', day: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true });
-        return new Paragraph({ alignment: AlignmentType.LEFT, spacing: { before: 300 }, children: [new TextRun({ text: 'ChartReview Pro  |  Generated: ' + pdt + ' PDT', size: 14, color: '9CA3AF', font: FONT })] });
-      };
-
-      const FONT = 'Calibri';
-      const SIZE = 22;     // 11pt in half-points
-      const SIZE_SM = 18;  // 9pt
-      const SIZE_TTL = 32; // 16pt
-      const DATE_INDENT = 1540;
-
-      const bold = (text: string, size?: number) => new TextRun({ text: String(text || ''), bold: true, font: FONT, size: size || SIZE });
-      const normal = (text: string, size?: number) => new TextRun({ text: String(text || ''), font: FONT, size: size || SIZE });
-
-      const visitPara = (dateStr: string, runs: any[], spacing: any = {}) => new Paragraph({
-        indent: { left: DATE_INDENT, hanging: DATE_INDENT },
-        tabStops: [{ type: 'left' as any, position: DATE_INDENT }],
-        spacing: { before: 200, after: 40, ...spacing },
-        children: dateStr
-          ? [bold(dateStr), new TextRun({ text: '\t', font: FONT, size: SIZE }), ...runs]
-          : runs,
-      });
-
-      const subPara = (runs: any[], spacing: any = {}) => new Paragraph({
-        indent: { left: DATE_INDENT },
-        spacing: { before: 40, after: 40, ...spacing },
-        children: runs,
-      });
-
-      const emptyPara = () => new Paragraph({ children: [], spacing: { after: 60 } });
-
-      const fmtDate = (dateStr: string) => {
-        if (!dateStr) return '';
-        const parts = dateStr.split('-').map(Number);
-        if (parts.length === 3 && !isNaN(parts[0])) {
-          return `${String(parts[1]).padStart(2,'0')}/${String(parts[2]).padStart(2,'0')}/${parts[0]}`;
-        }
-        return dateStr;
-      };
-
-      const inferVisitType = (ps: string) => {
-        const s = (ps || '').toLowerCase();
-        if (s.includes('physical therapy') || s.includes('occupational therapy') || s.includes('physio') || s.includes('hand therapy')) return 'Physical Therapy';
-        if (s.includes('emergency') || s.includes(' er ') || s === 'er' || s.includes('urgent care')) return 'ER Visit';
-        if (s.includes('radiology') || s.includes('imaging') || s.includes('mri') || s.includes('x-ray') || s.includes('ct scan')) return 'Radiology';
-        if (s.includes('surgery') || s.includes('surgical') || s.includes('operative')) return 'Surgery';
-        if (s.includes('c-4') || s.includes("workers' compensation report") || s.includes('wcb')) return 'C-4 Form';
-        if (s.includes('ime') || s.includes('independent medical')) return 'IME';
-        if (s.includes('chiropractic') || s.includes('chiropractor')) return 'Chiropractic';
-        return 'Office Visit';
-      };
-
-      const sections_content: any[] = [];
-
-      // ── Visit Index ──────────────────────────────────────────────────────
-      const viVisits = [...finalVisits].filter((v: any) => !v._ptBridge).map((v: any) => ({
-        ...v, visit_type: v.visit_type || inferVisitType(v.practice_setting || ''),
-      }));
-
-      sections_content.push(new Paragraph({ children: [new TextRun({ text: 'Visit Index', bold: true, color: '2563EB', size: 36, font: FONT })], spacing: { after: 100 } }));
-      sections_content.push(new Paragraph({ spacing: { after: 40 }, children: [bold('Patient: '), normal(freshSummary.patient_name || 'N/A')] }));
-      sections_content.push(new Paragraph({ spacing: { after: 40 }, children: [bold('Case Number: '), normal(freshSummary.case_number || 'N/A')] }));
-      sections_content.push(new Paragraph({ spacing: { after: 200 }, children: [new TextRun({ text: `${viVisits.length} visit${viVisits.length !== 1 ? 's' : ''} found`, italics: true, color: '555555', size: SIZE_SM, font: FONT })] }));
-
-      const viCellBorder: any = { style: BorderStyle.SINGLE, size: 4, color: 'auto' };
-      const viBorders = { top: viCellBorder, bottom: viCellBorder, left: viCellBorder, right: viCellBorder };
-      const viColWidths = [12, 25, 38, 25];
-      const makeViHeaderCell = (label: string, colIdx: number) => new TableCell({
-        width: { size: viColWidths[colIdx], type: WidthType.PERCENTAGE },
-        borders: viBorders, margins: { top: 60, bottom: 60, left: 80, right: 80 },
-        children: [new Paragraph({ children: [new TextRun({ text: label, bold: true, font: FONT, size: SIZE_SM })] })],
-      });
-      const viRows: any[] = [new TableRow({ children: ['Date', 'Provider', 'Facility', 'Visit Type'].map((l, ci) => makeViHeaderCell(l, ci)) })];
-      viVisits.forEach((v: any, i: number) => {
-        const rowBg = i % 2 === 0 ? 'FFFFFF' : 'EBF3FB';
-        const makeViCell = (text: string, colIdx: number) => new TableCell({
-          width: { size: viColWidths[colIdx], type: WidthType.PERCENTAGE },
-          shading: { type: 'solid' as any, color: rowBg, fill: rowBg },
-          borders: viBorders, margins: { top: 40, bottom: 40, left: 80, right: 80 },
-          children: [new Paragraph({ children: [new TextRun({ text: String(text || ''), font: FONT, size: SIZE_SM })] })],
-        });
-        viRows.push(new TableRow({ children: [makeViCell(fmtDate(v.visit_date), 0), makeViCell(v.rendering_provider || '', 1), makeViCell(v.practice_setting || '', 2), makeViCell(v.visit_type || '', 3)] }));
-      });
-      sections_content.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: viRows }));
-      sections_content.push(new Paragraph({ pageBreakBefore: true, children: [] }));
-
-      // ── Medical Summary ──────────────────────────────────────────────────
-      sections_content.push(new Paragraph({ children: [bold('MEDICAL RECORD SUMMARY', SIZE_TTL)], alignment: AlignmentType.CENTER, spacing: { after: 200 } }));
-      sections_content.push(new Paragraph({ spacing: { after: 40 }, children: [bold('Patient: '), normal(freshSummary.patient_name || 'N/A')] }));
-      sections_content.push(new Paragraph({ spacing: { after: 40 }, children: [bold('Case Number: '), normal(freshSummary.case_number || 'N/A')] }));
-      sections_content.push(emptyPara());
-
-      for (const visit of finalVisits) {
-        if ((visit as any)._ptBridge) {
-          sections_content.push(new Paragraph({
-            indent: { left: DATE_INDENT },
-            spacing: { before: 80, after: 80 },
-            border: { top: { style: BorderStyle.DASHED, size: 4, color: '999999' } },
-            children: [new TextRun({ text: `[ ${(visit as any)._ptCount} additional ${(visit as any)._ptProvider} visit${(visit as any)._ptCount !== 1 ? 's' : ''} omitted - see full record ]`, italics: true, color: '666666', size: SIZE_SM, font: FONT })],
-          }));
-          continue;
-        }
-        const v = visit as any;
-        const dateStr = v.visit_date ? fmtDate(v.visit_date) + ':' : '';
-        const contentRuns: any[] = [];
-        if (v.practice_setting)   contentRuns.push(normal(v.practice_setting + '. '));
-        if (v.rendering_provider) contentRuns.push(normal(v.rendering_provider + '. '));
-        if (v.hpi_summary) {
-          contentRuns.push(bold('HPI: '));
-          contentRuns.push(normal(v.hpi_summary + ' '));
-          if (v.injury_date) contentRuns.push(normal(`Injury Date: ${fmtDate(v.injury_date)}. `));
-          if (v.pain_scale && v.pain_scale !== 'not_documented') contentRuns.push(normal(`Pain Scale: ${v.pain_scale}. `));
-          if (v.symptom_progression && v.symptom_progression !== 'not_documented') {
-            const sp = v.symptom_progression.charAt(0).toUpperCase() + v.symptom_progression.slice(1);
-            contentRuns.push(normal(`Symptom Progression: ${sp}. `));
-          }
-        }
-        if (v.physical_exam_findings) { contentRuns.push(bold('Physical Examination: ')); contentRuns.push(normal(v.physical_exam_findings + ' ')); }
-        if (v.imaging_findings)       { contentRuns.push(bold('Imaging Findings: '));     contentRuns.push(normal(v.imaging_findings + ' ')); }
-        if (v.lab_findings && v.lab_findings.trim()) { contentRuns.push(bold('Laboratory Findings: ')); contentRuns.push(normal(v.lab_findings + ' ')); }
-
-        sections_content.push(visitPara(dateStr, contentRuns));
-        if (v.impression_diagnosis) sections_content.push(subPara([bold('Diagnosis: '), normal(v.impression_diagnosis)]));
-        if (v.treatment_plan)       sections_content.push(subPara([bold('Treatment Plan: '), normal(v.treatment_plan)], { after: 120 }));
-      }
-
-      sections_content.push(emptyPara());
-      sections_content.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [normal(`Generated by ChartReview Pro on ${new Date().toLocaleDateString()}`, SIZE_SM)] }));
-      sections_content.push(auditFooter());
-
-      const doc = new Document({
-        sections: [{ properties: { page: { margin: { top: 720, bottom: 720, left: 720, right: 720 } } }, children: sections_content }],
-      });
-
-      const buffer = await Packer.toBlob(doc);
-      const url = URL.createObjectURL(buffer);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `Medical_Summary_${(freshSummary.patient_name || 'Document').replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.docx`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } catch (exportErr: any) {
-      console.error('Export failed:', exportErr);
-      alert('Export failed: ' + (exportErr?.message || String(exportErr)));
-    }
+    const dedupedVisits = deduplicateVisits(finalVisits);
+    // Build simple HTML doc
+    const patientName = freshSummary.patient_name || 'Patient';
+    const rows = dedupedVisits.map((v: any) => `
+      <p style="margin:0 0 8pt 0;padding-left:90pt;text-indent:-90pt;font-family:Calibri;font-size:11pt">
+        <b>${formatVisitDate(v.visit_date || '')}</b>&nbsp;&nbsp;
+        ${v.practice_setting || ''} — ${v.rendering_provider || ''}
+        ${v.chief_complaint ? `<br/>${v.chief_complaint}` : ''}
+        ${v.assessment_plan ? `<br/>${v.assessment_plan}` : ''}
+      </p>`).join('\n');
+    const html = `<html><body style="margin:0.5in">${rows}</body></html>`;
+    const blob = new Blob([html], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${patientName.replace(/\s+/g, '_')}_Summary.doc`;
+    a.click(); URL.revokeObjectURL(url);
   };
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Visit Index Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Visit Index ────────────────────────────────────────────────────────────
   const generateVisitIndex = async () => {
     if (visitIndexDocsSelected.length === 0) return;
     setVisitIndexRunning(true);
@@ -1018,7 +632,7 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
     if (!visitIndexData) return;
     const { patient_name, visits } = visitIndexData;
     const rows = (visits || []).map((v: any) =>
-      `<p style="font-family:Calibri;font-size:10pt;margin:2pt 0"><b>${formatVisitDate(v.date || v.visit_date || '')}</b> Ã¢â‚¬â€ ${v.provider || v.rendering_provider || ''} Ã¢â‚¬â€ ${v.facility || v.practice_setting || ''}</p>`
+      `<p style="font-family:Calibri;font-size:10pt;margin:2pt 0"><b>${formatVisitDate(v.date || v.visit_date || '')}</b> — ${v.provider || v.rendering_provider || ''} — ${v.facility || v.practice_setting || ''}</p>`
     ).join('\n');
     const html = `<html><body style="margin:0.5in"><h2 style="font-family:Calibri">Visit Index: ${patient_name || 'Patient'}</h2>${rows}</body></html>`;
     const blob = new Blob([html], { type: 'application/msword' });
@@ -1051,7 +665,7 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
     setVisitIndexCrossCheck({ missing, extra });
   };
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Combine summaries Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Combine summaries ──────────────────────────────────────────────────────
   const combineSummaries = async () => {
     if (selectedSummariesToCombine.length < 2) return;
     const selected = summaries.filter((s: any) => selectedSummariesToCombine.includes(s.aws_summary_id || s.id));
@@ -1070,7 +684,7 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
     } catch (err: any) { alert('Combine failed: ' + err.message); }
   };
 
-  // Ã¢â€â‚¬Ã¢â€â‚¬ Render Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="p-6 md:p-8 space-y-6">
 
@@ -1347,7 +961,7 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
                     </Button>
                   </div>
                   <div className="pt-3 border-t border-slate-200 text-xs text-slate-500">
-                    Created {new Date(summary.created_at || summary.created_date).toLocaleDateString()}
+                    Created {new Date(summary.created_at || summary.created_date).toLocaleString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}
                   </div>
                 </div>
               </CardContent>
@@ -1405,7 +1019,7 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <List className="w-5 h-5 text-blue-600" />
-                Visit Index Ã¢â‚¬â€ {visitIndexData.patient_name || 'Patient'}
+                Visit Index — {visitIndexData.patient_name || 'Patient'}
               </DialogTitle>
               <DialogDescription>{visitIndexData.visits.length} encounters found</DialogDescription>
             </DialogHeader>
@@ -1456,7 +1070,7 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
               {(visitIndexData.visits || []).map((v: any, i: number) => (
                 <div key={i} className="flex gap-3 py-1 border-b border-slate-100 text-sm">
                   <span className="font-medium text-slate-700 w-24 shrink-0">{formatVisitDate(v.date || v.visit_date || '')}</span>
-                  <span className="text-slate-600">{v.provider || v.rendering_provider || 'Ã¢â‚¬â€'}</span>
+                  <span className="text-slate-600">{v.provider || v.rendering_provider || '—'}</span>
                   <span className="text-slate-400 ml-auto">{v.facility || v.practice_setting || ''}</span>
                 </div>
               ))}
@@ -1488,8 +1102,8 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm text-slate-900">{s.patient_name || 'Unnamed Patient'}</p>
                     <p className="text-xs text-slate-500">
-                      {s.visits?.length || 0} visits Ã‚Â· Created {new Date(s.created_at || s.created_date).toLocaleDateString()}
-                      {s.case_number && ` Ã‚Â· Case: ${s.case_number}`}
+                      {s.visits?.length || 0} visits · Created {new Date(s.created_at || s.created_date).toLocaleString(undefined, { month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })}
+                      {s.case_number && ` · Case: ${s.case_number}`}
                     </p>
                   </div>
                 </div>
