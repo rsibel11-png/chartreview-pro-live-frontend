@@ -545,6 +545,22 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
       if (!jobResult) throw new Error('Generation timed out after 30 minutes');
       const rawVisits: any[] = Array.isArray(jobResult.visits) ? jobResult.visits : [];
       const patientName: string = jobResult.patient_name || '';
+
+      // Save summary record to /summaries so it appears in the list
+      genStore.set({ statusMsg: 'Saving summary...' });
+      try {
+        await awsProxy('/summaries', 'POST', {
+          patient_name: patientName,
+          visits: rawVisits,
+          status: 'draft',
+          doc_count: jobResult.doc_count || 0,
+          visit_count: rawVisits.length,
+        });
+      } catch (saveErr: any) {
+        console.error('Failed to save summary record:', saveErr);
+        // Don't block the success message — still show completion
+      }
+
       clearInterval(timerHandle);
       genStore.set({ timerHandle: null });
       queryClient.invalidateQueries({ queryKey: ["aws-summaries"] });
