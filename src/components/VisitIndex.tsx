@@ -9,6 +9,7 @@ import React, { useState, useEffect } from "react";
 // ── Env vars ──────────────────────────────────────────────────────────────────
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || "";
 const ORG_ID      = process.env.REACT_APP_ORG_ID      || "";
+const API_KEY     = process.env.REACT_APP_AWS_API_KEY  || "";
 
 declare global {
   interface Window { docx: any; }
@@ -52,6 +53,7 @@ export default function VisitIndex({ onNavigate, idToken }: { onNavigate?: (page
   const awsProxy = async (path: string, method = "GET", data?: any): Promise<any> => {
     const opts: any = {
       method,
+      "x-api-key": API_KEY,
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken || ""}`, "x-org-id": ORG_ID },
     };
     if (data !== undefined) opts.body = JSON.stringify(data);
@@ -81,6 +83,7 @@ export default function VisitIndex({ onNavigate, idToken }: { onNavigate?: (page
             ? `${AWS_API_URL}/documents?last_key=${encodeURIComponent(JSON.stringify(lastKey))}`
             : `${AWS_API_URL}/documents`;
           const res = await fetch(url, {
+            "x-api-key": API_KEY,
             headers: { "Authorization": `Bearer ${idToken || ""}`, "x-org-id": ORG_ID },
           });
           const data = await res.json();
@@ -467,3 +470,4 @@ export default function VisitIndex({ onNavigate, idToken }: { onNavigate?: (page
     </div>
   );
 }
+

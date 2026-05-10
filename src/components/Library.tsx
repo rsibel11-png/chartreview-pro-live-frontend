@@ -40,6 +40,7 @@ import {
 
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || "";
 const ORG_ID      = process.env.REACT_APP_ORG_ID      || "";
+const API_KEY     = process.env.REACT_APP_AWS_API_KEY  || "";
 
 // ── Inline shadcn-style primitives (no @/components/ui dependency) ──────────
 const Card = ({ className = "", children, ...p }: any) => (
@@ -222,6 +223,7 @@ const ModalPdfViewer = React.memo(({ partId, localPageNum, scale = 1.2, idToken 
           const res = await fetch(`${AWS_API_URL}/documents/${partId}/download-url`, {
             method: "GET",
             headers: {
+              "x-api-key": API_KEY,
               "Authorization": `Bearer ${idToken || ""}`,
               "x-org-id": ORG_ID,
             },
@@ -289,6 +291,7 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
       method,
       headers: {
         "Content-Type": "application/json",
+        "x-api-key": API_KEY,
         "Authorization": `Bearer ${idToken || ""}`,
         "x-org-id": ORG_ID,
       },
@@ -359,6 +362,7 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
       const res = await fetch(`${AWS_API_URL}/documents`, {
         method: "GET",
         headers: {
+          "x-api-key": API_KEY,
           "Authorization": `Bearer ${idToken || ""}`,
           "x-org-id": ORG_ID,
         },
@@ -1928,3 +1932,4 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
     </div>
   );
 }
+

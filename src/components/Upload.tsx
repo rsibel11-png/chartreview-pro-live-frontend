@@ -10,6 +10,7 @@ import toast from "react-hot-toast";
 // ── Env vars (CRA) ────────────────────────────────────────────────────────────
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || "";
 const ORG_ID      = process.env.REACT_APP_ORG_ID      || "";
+const API_KEY     = process.env.REACT_APP_AWS_API_KEY  || "";
 let _idToken = "";
 
 const MAX_FILE_SIZE_MB   = 100;
@@ -133,6 +134,7 @@ async function getUploadUrl(payload: any, retries = 3): Promise<any> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        "x-api-key": API_KEY,
         "Authorization": `Bearer ${_idToken}`,
         "x-org-id": ORG_ID,
       },
@@ -172,6 +174,7 @@ async function awsProxy(path: string, method = "GET", data?: any, retries = 4): 
       method,
       headers: {
         "Content-Type": "application/json",
+        "x-api-key": API_KEY,
         "Authorization": `Bearer ${_idToken}`,
         "x-org-id": ORG_ID,
       },
@@ -653,3 +656,4 @@ export default function Upload({ onNavigate, idToken = "" }: { onNavigate?: (pag
     </div>
   );
 }
+

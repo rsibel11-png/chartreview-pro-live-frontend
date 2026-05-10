@@ -8,6 +8,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 // ── Env vars ──────────────────────────────────────────────────────────────────
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || "";
 const ORG_ID      = process.env.REACT_APP_ORG_ID      || "";
+const API_KEY     = process.env.REACT_APP_AWS_API_KEY  || "";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const STRING_VISIT_FIELDS = [
@@ -156,6 +157,7 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
   const awsProxy = async (path: string, method = "GET", data?: any): Promise<any> => {
     const opts: any = {
       method,
+      "x-api-key": API_KEY,
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken || ""}`, "x-org-id": ORG_ID },
     };
     if (data !== undefined) opts.body = JSON.stringify(data);
@@ -588,3 +590,4 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
     </div>
   );
 }
+
