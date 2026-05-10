@@ -53,8 +53,7 @@ export default function VisitIndex({ onNavigate, idToken }: { onNavigate?: (page
   const awsProxy = async (path: string, method = "GET", data?: any): Promise<any> => {
     const opts: any = {
       method,
-      "x-api-key": API_KEY,
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken || ""}`, "x-org-id": ORG_ID },
+      headers: { "Content-Type": "application/json", "x-api-key": API_KEY, "Authorization": `Bearer ${idToken || ""}`, "x-org-id": ORG_ID },
     };
     if (data !== undefined) opts.body = JSON.stringify(data);
     const res = await fetch(`${AWS_API_URL}${path}`, opts);
@@ -83,8 +82,7 @@ export default function VisitIndex({ onNavigate, idToken }: { onNavigate?: (page
             ? `${AWS_API_URL}/documents?last_key=${encodeURIComponent(JSON.stringify(lastKey))}`
             : `${AWS_API_URL}/documents`;
           const res = await fetch(url, {
-            "x-api-key": API_KEY,
-            headers: { "Authorization": `Bearer ${idToken || ""}`, "x-org-id": ORG_ID },
+            headers: { "Authorization": `Bearer ${idToken || ""}`, "x-api-key": API_KEY, "x-org-id": ORG_ID },
           });
           const data = await res.json();
           allDocs = allDocs.concat(data.documents || []);
