@@ -576,7 +576,6 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
 
   // ── Export to Word ─────────────────────────────────────────────────────────
   const exportToWord = async (summary: any) => {
-    // Re-fetch fresh data
     let freshSummary = summary;
     try {
       const fetched = await awsProxy(`/summaries/${summary.aws_summary_id || summary.id}`, 'GET');
@@ -584,53 +583,107 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
         freshSummary = fetched;
       }
     } catch (_) {}
-    const finalVisits: any[] = freshSummary.visits
+
+    const sorted: any[] = freshSummary.visits
       ? [...freshSummary.visits].sort((a: any, b: any) => {
           const da = (a.visit_date || '').trim();
           const db = (b.visit_date || '').trim();
           if (!da) return 1; if (!db) return -1;
           if (da !== db) return da < db ? -1 : 1;
-          const aIsC4 = (a.practice_setting || '').toLowerCase().includes('c-4');
-          const bIsC4 = (b.practice_setting || '').toLowerCase().includes('c-4');
-          if (aIsC4 && !bIsC4) return -1; if (!aIsC4 && bIsC4) return 1;
+          const ac4 = (a.practice_setting || '').toLowerCase().includes('c-4');
+          const bc4 = (b.practice_setting || '').toLowerCase().includes('c-4');
+          if (ac4 && !bc4) return -1; if (!ac4 && bc4) return 1;
           return 0;
         })
       : [];
-    if (!finalVisits.length) {
+
+    if (!sorted.length) {
       alert('This summary has no visits saved. Please open Edit, make any change, and Save Summary before exporting.');
       return;
     }
-    const dedupedVisits = deduplicateVisits(finalVisits);
+
+    const finalVisits = deduplicateVisits(sorted);
     const patientName = freshSummary.patient_name || 'Patient';
+    const caseNumber  = (freshSummary.case_number  || '') as string;
 
-    const fieldLine = (label: string, val: string) =>
-      val ? `<br/><span style="color:#444;font-size:10.5pt"><b>${label}:</b> ${val}</span>` : '';
+    const fmtD = (d: string): string => {
+      if (!d) return '';
+      const parts = d.split('-').map(Number);
+      if (parts.length === 3 && !isNaN(parts[0]))
+        return `${String(parts[1]).padStart(2,'0')}/${String(parts[2]).padStart(2,'0')}/${parts[0]}`;
+      return d;
+    };
 
-    const rows = dedupedVisits.map((v: any) => {
-      const diagText = Array.isArray(v.diagnoses)
-        ? v.diagnoses.map((d: any) => typeof d === 'string' ? d : `${d.code || ''} ${d.description || ''}`.trim()).filter(Boolean).join('; ')
-        : (v.diagnoses || '');
+    const field = (label: string, val: string): string =>
+      val ? `<br/><span style="color:#333;font-size:10.5pt"><b>${label}:</b> ${val}</span>` : '';
+
+    const inferType = (ps: string): string => {
+      const s = (ps || '').toLowerCase();
+      if (s.includes('physical therapy') || s.includes('occupational therapy') || s.includes('physio') || s.includes('hand therapy')) return 'Physical Therapy';
+      if (s.includes('emergency') || s.includes('urgent care')) return 'ER/Urgent Care';
+      if (s.includes('radiology') || s.includes('imaging') || s.includes('mri') || s.includes('x-ray')) return 'Radiology';
+      if (s.includes('surgery') || s.includes('surgical')) return 'Surgery';
+      if (s.includes('c-4') || s.includes("workers\' compensation")) return 'C-4 Form';
+      if (s.includes('chiropractic')) return 'Chiropractic';
+      return 'Office Visit';
+    };
+
+    const viRows = finalVisits.map((v: any): string => `
+      <tr>
+        <td style="padding:4px 8px;border:1px solid #ccc;font-size:9.5pt">${fmtD(v.visit_date)}</td>
+        <td style="padding:4px 8px;border:1px solid #ccc;font-size:9.5pt">${v.rendering_provider || ''}</td>
+        <td style="padding:4px 8px;border:1px solid #ccc;font-size:9.5pt">${v.practice_setting || ''}</td>
+        <td style="padding:4px 8px;border:1px solid #ccc;font-size:9.5pt">${v.visit_type || inferType(v.practice_setting || '')}</td>
+      </tr>`).join('');
+
+    const viTable = `
+      <p style="font-family:Calibri;font-size:18pt;font-weight:bold;color:#2563EB;margin-bottom:8pt">Visit Index</p>
+      <p style="font-family:Calibri;font-size:11pt"><b>Patient:</b> ${patientName}</p>
+      <p style="font-family:Calibri;font-size:11pt"><b>Case Number:</b> ${caseNumber}</p>
+      <p style="font-family:Calibri;font-size:9pt;color:#555;font-style:italic;margin-bottom:12pt">${finalVisits.length} visit${finalVisits.length !== 1 ? 's' : ''} found</p>
+      <table style="width:100%;border-collapse:collapse;font-family:Calibri">
+        <tr style="background:#EBF3FB">
+          <th style="padding:5px 8px;border:1px solid #ccc;font-size:9.5pt;text-align:left;width:12%">Date</th>
+          <th style="padding:5px 8px;border:1px solid #ccc;font-size:9.5pt;text-align:left;width:25%">Provider</th>
+          <th style="padding:5px 8px;border:1px solid #ccc;font-size:9.5pt;text-align:left;width:38%">Facility</th>
+          <th style="padding:5px 8px;border:1px solid #ccc;font-size:9.5pt;text-align:left;width:25%">Visit Type</th>
+        </tr>
+        ${viRows}
+      </table>
+      <div style="page-break-after:always"></div>`;
+
+    const visitRows = finalVisits.map((v: any): string => {
+      const icd = Array.isArray(v.icd10_codes) ? (v.icd10_codes as string[]).join(', ') : '';
+      const diagText = (v.impression_diagnosis || '') + (icd ? ` (ICD-10: ${icd})` : '');
       return `
       <p style="margin:0 0 10pt 0;padding-left:90pt;text-indent:-90pt;font-family:Calibri;font-size:11pt">
-        <b>${formatVisitDate(v.visit_date || '')}</b>&nbsp;&nbsp;${v.practice_setting || ''} — ${v.rendering_provider || ''}
-        ${fieldLine('CC', v.chief_complaint || '')}
-        ${fieldLine('HPI', v.hpi_summary || '')}
-        ${fieldLine('Exam', v.physical_exam_findings || '')}
-        ${fieldLine('Dx', diagText)}
-        ${fieldLine('Tx', v.treatment_plan || '')}
+        <b>${fmtD(v.visit_date)}:</b>&nbsp;&nbsp;${v.practice_setting || ''} — ${v.rendering_provider || ''}
+        ${field('CC',      v.chief_complaint       || '')}
+        ${field('HPI',     v.hpi_summary           || '')}
+        ${field('Exam',    v.physical_exam_findings || '')}
+        ${field('Imaging', v.imaging_findings       || '')}
+        ${field('Labs',    v.lab_findings           || '')}
+        ${field('Dx',      diagText)}
+        ${field('Tx',      v.treatment_plan         || '')}
       </p>`;
-    }).join('\n');
+    }).join('');
 
-    const html = `<html><body style="margin:0.5in 0.5in 0.5in 0.5in">
-      <p style="font-family:Calibri;font-size:13pt;font-weight:bold;margin-bottom:16pt">${patientName} — Medical Summary</p>
-      ${rows}
-      <p style="font-family:Calibri;font-size:9pt;color:#888;margin-top:20pt">Generated by ChartReview Pro on ${new Date().toLocaleDateString()}</p>
+    const now = new Date().toLocaleString('en-US', { month:'2-digit', day:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true });
+
+    const html = `<html><body style="font-family:Calibri;margin:0.5in 0.5in 0.5in 0.5in">
+      ${viTable}
+      <p style="font-size:16pt;font-weight:bold;text-align:center;margin-bottom:16pt">MEDICAL RECORD SUMMARY</p>
+      <p style="font-size:11pt"><b>Patient:</b> ${patientName}</p>
+      <p style="font-size:11pt;margin-bottom:16pt"><b>Case Number:</b> ${caseNumber}</p>
+      ${visitRows}
+      <p style="font-size:9pt;color:#9CA3AF;margin-top:20pt">ChartReview Pro &nbsp;|&nbsp; Generated: ${now}</p>
     </body></html>`;
+
     const blob = new Blob([html], { type: 'application/msword' });
-    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = `${patientName.replace(/\s+/g, '_')}_Summary.doc`;
-    a.click(); URL.revokeObjectURL(url);
+    a.href = URL.createObjectURL(blob);
+    a.download = `${patientName.replace(/\s+/g, '_')}_Summary.doc`;
+    a.click(); URL.revokeObjectURL(a.href);
   };
 
   // ── Visit Index ────────────────────────────────────────────────────────────
