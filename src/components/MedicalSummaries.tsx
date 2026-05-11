@@ -918,8 +918,7 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
                                     </div>
                                   </div>
                                 </div>
-                              );
-          })}
+                              ))}
                             </CardContent>
                           </Card>
                         );
@@ -1026,7 +1025,8 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
                 </div>
               </CardContent>
             </Card>
-          ))}
+          );
+          })}
         </div>
       ) : (
         <Card className="shadow-md">
