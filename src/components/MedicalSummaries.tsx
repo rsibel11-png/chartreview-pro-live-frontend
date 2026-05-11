@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, FileCheck, Eye, Edit, Download, FileDown, Merge, Plus, Users, CheckSquare, Trash2, Filter } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import MedicalSummaryForm from "./summaries/MedicalSummaryForm";
 import SummaryViewer from "./summaries/SummaryViewer";
 
@@ -576,7 +576,7 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
 
   // ── Export to Word ─────────────────────────────────────────────────────────
   const exportToWord = async (summary: any) => {
-    // Re-fetch fresh data to get polished visits
+    // Re-fetch fresh data
     let freshSummary = summary;
     try {
       const fetched = await awsProxy(`/summaries/${summary.aws_summary_id || summary.id}`, 'GET');
@@ -584,8 +584,7 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
         freshSummary = fetched;
       }
     } catch (_) {}
-
-    const sortedVisits: any[] = freshSummary.visits
+    const finalVisits: any[] = freshSummary.visits
       ? [...freshSummary.visits].sort((a: any, b: any) => {
           const da = (a.visit_date || '').trim();
           const db = (b.visit_date || '').trim();
@@ -597,62 +596,41 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
           return 0;
         })
       : [];
-
-    if (!sortedVisits.length) {
+    if (!finalVisits.length) {
       alert('This summary has no visits saved. Please open Edit, make any change, and Save Summary before exporting.');
       return;
     }
-
-    const finalVisits = deduplicateVisits(sortedVisits);
+    const dedupedVisits = deduplicateVisits(finalVisits);
     const patientName = freshSummary.patient_name || 'Patient';
 
-    // Strip non-ASCII (en-dash, em-dash, curly quotes, etc.) to plain ASCII
-    const sanitize = (s: string) => (s || '')
-      .replace(/\u2013|\u2014/g, '-')
-      .replace(/\u2018|\u2019/g, "'")
-      .replace(/\u201c|\u201d/g, '"')
-      .replace(/[\u2022\u2023\u25e6]/g, '-')
-      .replace(/[^\x00-\x7F]/g, '');
-
     const fieldLine = (label: string, val: string) =>
-      val ? `<br/><span style="color:#444;font-size:10.5pt"><b>${label}:</b> ${sanitize(val)}</span>` : '';
+      val ? `<br/><span style="color:#444;font-size:10.5pt"><b>${label}:</b> ${val}</span>` : '';
 
-    const rows = finalVisits.map((v: any) => {
-      const diagText = (v.impression_diagnosis || '')
-        + (v.icd10_codes && v.icd10_codes.length ? ` (ICD-10: ${v.icd10_codes.join(', ')})` : '');
+    const rows = dedupedVisits.map((v: any) => {
+      const diagText = Array.isArray(v.diagnoses)
+        ? v.diagnoses.map((d: any) => typeof d === 'string' ? d : `${d.code || ''} ${d.description || ''}`.trim()).filter(Boolean).join('; ')
+        : (v.diagnoses || '');
       return `
       <p style="margin:0 0 10pt 0;padding-left:90pt;text-indent:-90pt;font-family:Calibri;font-size:11pt">
-        <b>${formatVisitDate(v.visit_date || '')}</b>&nbsp;&nbsp;${sanitize(v.practice_setting || '')} — ${sanitize(v.rendering_provider || '')}
+        <b>${formatVisitDate(v.visit_date || '')}</b>&nbsp;&nbsp;${v.practice_setting || ''} — ${v.rendering_provider || ''}
+        ${fieldLine('CC', v.chief_complaint || '')}
         ${fieldLine('HPI', v.hpi_summary || '')}
-        ${fieldLine('Physical Examination', v.physical_exam_findings || '')}
-        ${fieldLine('Imaging Findings', v.imaging_findings || '')}
-        ${fieldLine('Lab Findings', v.lab_findings || '')}
-        ${fieldLine('Impression/Diagnosis', diagText)}
-        ${fieldLine('Treatment Plan', v.treatment_plan || '')}
+        ${fieldLine('Exam', v.physical_exam_findings || '')}
+        ${fieldLine('Dx', diagText)}
+        ${fieldLine('Tx', v.treatment_plan || '')}
       </p>`;
     }).join('\n');
 
-    const firstVisit = finalVisits.find((v: any) => v.visit_date);
-    const lastVisit = [...finalVisits].reverse().find((v: any) => v.visit_date);
-    const fmtDate = (d: string) => { const [y,m,dd] = d.split('-').map(Number); return `${m}/${dd}/${y}`; };
-
     const html = `<html><body style="margin:0.5in 0.5in 0.5in 0.5in">
-      <p style="font-family:Calibri;font-size:13pt;font-weight:bold;margin-bottom:16pt">${sanitize(patientName)} — Medical Summary</p>
+      <p style="font-family:Calibri;font-size:13pt;font-weight:bold;margin-bottom:16pt">${patientName} — Medical Summary</p>
       ${rows}
-      <p style="font-family:Calibri;font-size:9pt;color:#888;margin-top:20pt;text-align:center;">
-        Initial Visit: ${firstVisit ? fmtDate(firstVisit.visit_date) : 'N/A'} &nbsp;|&nbsp;
-        Final Visit: ${lastVisit ? fmtDate(lastVisit.visit_date) : 'N/A'} &nbsp;|&nbsp;
-        ${finalVisits.length} visits attended.
-      </p>
-      <p style="font-family:Calibri;font-size:9pt;color:#888;margin-top:4pt;text-align:center;">Generated by ChartReview Pro on ${new Date().toLocaleDateString()}</p>
+      <p style="font-family:Calibri;font-size:9pt;color:#888;margin-top:20pt">Generated by ChartReview Pro on ${new Date().toLocaleDateString()}</p>
     </body></html>`;
-
     const blob = new Blob([html], { type: 'application/msword' });
-    const a_el = document.createElement('a');
-    a_el.href = URL.createObjectURL(blob);
-    a_el.download = `${sanitize(patientName).replace(/\s+/g, '_')}_Summary.doc`;
-    a_el.click();
-    URL.revokeObjectURL(a_el.href);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `${patientName.replace(/\s+/g, '_')}_Summary.doc`;
+    a.click(); URL.revokeObjectURL(url);
   };
 
   // ── Visit Index ────────────────────────────────────────────────────────────
@@ -966,36 +944,30 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
         </div>
       ) : summaries.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {summaries.map((summary: any) => {
-            const isPolishing = summary.status === 'polishing';
-            return (
-            <Card key={summary.aws_summary_id || summary.id} className={`hover:shadow-lg transition-all duration-300 group${isPolishing ? ' opacity-60' : ''}`}>
+          {summaries.map((summary: any) => (
+            <Card key={summary.aws_summary_id || summary.id} className="hover:shadow-lg transition-all duration-300 group">
               <CardContent className="p-6">
                 <div className="space-y-4">
                   <div className="flex items-start justify-between">
                     <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-100 to-emerald-100 flex items-center justify-center">
-                      {isPolishing
-                        ? <Loader2 className="w-6 h-6 text-green-600 animate-spin" />
-                        : <FileCheck className="w-6 h-6 text-green-600" />}
+                      <FileCheck className="w-6 h-6 text-green-600" />
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant="outline" className={
-                        isPolishing ? 'bg-yellow-50 text-yellow-700 border-yellow-200'
-                        : summary.status === 'finalized' ? 'bg-green-50 text-green-700 border-green-200'
+                        summary.status === 'finalized' ? 'bg-green-50 text-green-700 border-green-200'
                         : summary.status === 'reviewed' ? 'bg-blue-50 text-blue-700 border-blue-200'
                         : 'bg-slate-50 text-slate-700 border-slate-200'
-                      }>{isPolishing ? 'polishing...' : summary.status}</Badge>
-                      {!isPolishing && <Button variant="ghost" size="icon"
+                      }>{summary.status}</Badge>
+                      <Button variant="ghost" size="icon"
                         className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-red-600 hover:text-red-700 hover:bg-red-50"
                         onClick={() => setDeleteSummary(summary)}>
                         <Trash2 className="w-4 h-4" />
-                      </Button>}
+                      </Button>
                     </div>
                   </div>
                   <div>
                     <h3 className="font-semibold text-slate-900 mb-2">{summary.patient_name || 'Unnamed Patient'}</h3>
                     <p className="text-sm text-slate-600">{summary.visits?.length || 0} visit{summary.visits?.length !== 1 ? 's' : ''}</p>
-                    {isPolishing && <p className="text-xs text-yellow-600 mt-1">Finalizing summary — will be ready shortly</p>}
                     {summary.document_id?.includes(',') && (
                       <Badge variant="outline" className="mt-2 bg-purple-50 text-purple-700 border-purple-200">
                         <Users className="w-3 h-3 mr-1" />Combined
@@ -1003,14 +975,14 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
                     )}
                   </div>
                   <div className="flex gap-1.5 justify-center">
-                    <Button variant="outline" size="sm" className="flex-1" title="View" disabled={isPolishing} onClick={() => setViewingSummary(summary)}>
+                    <Button variant="outline" size="sm" className="flex-1" title="View" onClick={() => setViewingSummary(summary)}>
                       <Eye className="w-4 h-4" />
                     </Button>
-                    <Button variant="outline" size="sm" className="flex-1" title="Edit" disabled={isPolishing}
+                    <Button variant="outline" size="sm" className="flex-1" title="Edit"
                       onClick={() => { setEditing(true); setEditingSummary(normalizeSummaryForEdit(summary)); }}>
                       <Edit className="w-4 h-4" />
                     </Button>
-                    <Button variant="outline" size="sm" className="flex-1" title="Export to Word" disabled={isPolishing}
+                    <Button variant="outline" size="sm" className="flex-1" title="Export to Word"
                       onClick={() => exportToWord(summary)}>
                       <Download className="w-4 h-4" />
                     </Button>
@@ -1025,8 +997,7 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
                 </div>
               </CardContent>
             </Card>
-          );
-          })}
+          ))}
         </div>
       ) : (
         <Card className="shadow-md">
