@@ -762,7 +762,7 @@ const normalizePTSetting = (setting: string): string => {
       });
       return result;
     };
-    const finalVisits = buildVisitList(deduplicateVisits(sorted), hasPTVisits);
+    const finalVisits = buildVisitList(deduplicateVisits(sorted), false); // PT consolidation disabled — show all visits
     const patientName = (freshSummary.patient_name || 'Patient') as string;
     const caseNumber  = (freshSummary.case_number  || '')         as string;
 
