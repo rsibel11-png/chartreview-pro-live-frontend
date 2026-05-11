@@ -9,6 +9,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import MedicalSummaryForm from "./summaries/MedicalSummaryForm";
 import SummaryViewer from "./summaries/SummaryViewer";
+import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle } from 'docx';
 
 // ── Env vars (CRA) ────────────────────────────────────────────────────────────
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || "https://1h4kpspbs6.execute-api.us-east-1.amazonaws.com/prod";
@@ -603,10 +604,37 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
     }
 
     const finalVisits = deduplicateVisits(sorted);
-    const patientName = freshSummary.patient_name || 'Patient';
-    const caseNumber  = (freshSummary.case_number  || '') as string;
+    const patientName = (freshSummary.patient_name || 'Patient') as string;
+    const caseNumber  = (freshSummary.case_number  || '')         as string;
 
-    const fmtD = (d: string): string => {
+    const ptToHalfPt = (pt: number) => pt * 2;
+    const FONT     = 'Calibri';
+    const SIZE     = ptToHalfPt(11);
+    const SIZE_SM  = ptToHalfPt(9);
+    const SIZE_TTL = ptToHalfPt(16);
+    const DATE_INDENT = 1540;
+
+    const boldRun   = (text: string, size?: number) => new TextRun({ text: String(text || ''), bold: true,  font: FONT, size: size || SIZE });
+    const normalRun = (text: string, size?: number) => new TextRun({ text: String(text || ''), font: FONT, size: size || SIZE });
+
+    const visitPara = (dateStr: string, runs: any[], spacing: any = {}) => new Paragraph({
+      indent: { left: DATE_INDENT, hanging: DATE_INDENT },
+      tabStops: [{ type: 'left' as any, position: DATE_INDENT }],
+      spacing: { before: 200, after: 40, ...spacing },
+      children: dateStr
+        ? [boldRun(dateStr), new TextRun({ text: '\t', font: FONT, size: SIZE }), ...runs]
+        : runs,
+    });
+
+    const subPara = (runs: any[], spacing: any = {}) => new Paragraph({
+      indent: { left: DATE_INDENT },
+      spacing: { before: 40, after: 40, ...spacing },
+      children: runs,
+    });
+
+    const emptyPara = () => new Paragraph({ children: [], spacing: { after: 60 } });
+
+    const fmtDate = (d: string): string => {
       if (!d) return '';
       const parts = d.split('-').map(Number);
       if (parts.length === 3 && !isNaN(parts[0]))
@@ -614,76 +642,118 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
       return d;
     };
 
-    const field = (label: string, val: string): string =>
-      val ? `<br/><span style="color:#333;font-size:10.5pt"><b>${label}:</b> ${val}</span>` : '';
-
-    const inferType = (ps: string): string => {
+    const inferVisitType = (ps: string): string => {
       const s = (ps || '').toLowerCase();
       if (s.includes('physical therapy') || s.includes('occupational therapy') || s.includes('physio') || s.includes('hand therapy')) return 'Physical Therapy';
-      if (s.includes('emergency') || s.includes('urgent care')) return 'ER/Urgent Care';
-      if (s.includes('radiology') || s.includes('imaging') || s.includes('mri') || s.includes('x-ray')) return 'Radiology';
-      if (s.includes('surgery') || s.includes('surgical')) return 'Surgery';
-      if (s.includes('c-4') || s.includes("workers\' compensation")) return 'C-4 Form';
-      if (s.includes('chiropractic')) return 'Chiropractic';
+      if (s.includes('emergency') || s.includes(' er ') || s === 'er' || s.includes('urgent care')) return 'ER Visit';
+      if (s.includes('radiology') || s.includes('imaging') || s.includes('mri') || s.includes('x-ray') || s.includes('ct scan')) return 'Radiology';
+      if (s.includes('surgery') || s.includes('surgical') || s.includes('operative')) return 'Surgery';
+      if (s.includes('c-4') || s.includes("workers' compensation report") || s.includes('wcb')) return 'C-4 Form';
+      if (s.includes('ime') || s.includes('independent medical')) return 'IME';
+      if (s.includes('chiropractic') || s.includes('chiropractor')) return 'Chiropractic';
       return 'Office Visit';
     };
 
-    const viRows = finalVisits.map((v: any): string => `
-      <tr>
-        <td style="padding:4px 8px;border:1px solid #ccc;font-size:9.5pt">${fmtD(v.visit_date)}</td>
-        <td style="padding:4px 8px;border:1px solid #ccc;font-size:9.5pt">${v.rendering_provider || ''}</td>
-        <td style="padding:4px 8px;border:1px solid #ccc;font-size:9.5pt">${v.practice_setting || ''}</td>
-        <td style="padding:4px 8px;border:1px solid #ccc;font-size:9.5pt">${v.visit_type || inferType(v.practice_setting || '')}</td>
-      </tr>`).join('');
+    const sections_content: any[] = [];
 
-    const viTable = `
-      <p style="font-family:Calibri;font-size:18pt;font-weight:bold;color:#2563EB;margin-bottom:8pt">Visit Index</p>
-      <p style="font-family:Calibri;font-size:11pt"><b>Patient:</b> ${patientName}</p>
-      <p style="font-family:Calibri;font-size:11pt"><b>Case Number:</b> ${caseNumber}</p>
-      <p style="font-family:Calibri;font-size:9pt;color:#555;font-style:italic;margin-bottom:12pt">${finalVisits.length} visit${finalVisits.length !== 1 ? 's' : ''} found</p>
-      <table style="width:100%;border-collapse:collapse;font-family:Calibri">
-        <tr style="background:#EBF3FB">
-          <th style="padding:5px 8px;border:1px solid #ccc;font-size:9.5pt;text-align:left;width:12%">Date</th>
-          <th style="padding:5px 8px;border:1px solid #ccc;font-size:9.5pt;text-align:left;width:25%">Provider</th>
-          <th style="padding:5px 8px;border:1px solid #ccc;font-size:9.5pt;text-align:left;width:38%">Facility</th>
-          <th style="padding:5px 8px;border:1px solid #ccc;font-size:9.5pt;text-align:left;width:25%">Visit Type</th>
-        </tr>
-        ${viRows}
-      </table>
-      <div style="page-break-after:always"></div>`;
+    // ── Visit Index ───────────────────────────────────────────────────────
+    const viVisits = [...finalVisits].filter((v: any) => !v._ptBridge).map((v: any) => ({
+      visit_date: v.visit_date || '',
+      rendering_provider: v.rendering_provider || '',
+      practice_setting: v.practice_setting || '',
+      visit_type: v.visit_type || inferVisitType(v.practice_setting || ''),
+    })).sort((a: any, b: any) => {
+      const da = (a.visit_date || '').trim(); const db = (b.visit_date || '').trim();
+      if (!da) return 1; if (!db) return -1;
+      return da < db ? -1 : da > db ? 1 : 0;
+    });
 
-    const visitRows = finalVisits.map((v: any): string => {
-      const icd = Array.isArray(v.icd10_codes) ? (v.icd10_codes as string[]).join(', ') : '';
-      const diagText = (v.impression_diagnosis || '') + (icd ? ` (ICD-10: ${icd})` : '');
-      return `
-      <p style="margin:0 0 10pt 0;padding-left:90pt;text-indent:-90pt;font-family:Calibri;font-size:11pt">
-        <b>${fmtD(v.visit_date)}:</b>  ${v.practice_setting || ''} - ${v.rendering_provider || ''}
-        ${field('CC',      v.chief_complaint       || '')}
-        ${field('HPI',     v.hpi_summary           || '')}
-        ${field('Exam',    v.physical_exam_findings || '')}
-        ${field('Imaging', v.imaging_findings       || '')}
-        ${field('Labs',    v.lab_findings           || '')}
-        ${field('Dx',      diagText)}
-        ${field('Tx',      v.treatment_plan         || '')}
-      </p>`;
-    }).join('');
+    if (viVisits.length > 0) {
+      sections_content.push(new Paragraph({ children: [new TextRun({ text: 'Visit Index', bold: true, color: '2563EB', size: ptToHalfPt(18), font: FONT })], spacing: { after: 100 } }));
+      sections_content.push(new Paragraph({ spacing: { after: 40 }, children: [boldRun('Patient: '), normalRun(patientName)] }));
+      sections_content.push(new Paragraph({ spacing: { after: 40 }, children: [boldRun('Case Number: '), normalRun(caseNumber)] }));
+      sections_content.push(new Paragraph({ spacing: { after: 200 }, children: [new TextRun({ text: `${viVisits.length} visit${viVisits.length !== 1 ? 's' : ''} found`, italics: true, color: '555555', size: SIZE_SM, font: FONT })] }));
 
-    const now = new Date().toLocaleString('en-US', { month:'2-digit', day:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true });
+      const viCellBorder: any = { style: BorderStyle.SINGLE, size: 4, color: 'auto' };
+      const viBorders = { top: viCellBorder, bottom: viCellBorder, left: viCellBorder, right: viCellBorder };
+      const viColWidths = [12, 25, 38, 25];
+      const makeViHeaderCell = (label: string, colIdx: number) => new TableCell({
+        width: { size: viColWidths[colIdx], type: WidthType.PERCENTAGE },
+        borders: viBorders, margins: { top: 60, bottom: 60, left: 80, right: 80 },
+        children: [new Paragraph({ children: [new TextRun({ text: label, bold: true, font: FONT, size: SIZE_SM })] })],
+      });
+      const viRows: any[] = [new TableRow({ children: ['Date','Provider','Facility','Visit Type'].map((l, ci) => makeViHeaderCell(l, ci)) })];
+      viVisits.forEach((v: any, i: number) => {
+        const rowBg = i % 2 === 0 ? 'FFFFFF' : 'EBF3FB';
+        const mkCell = (text: string, ci: number) => new TableCell({
+          width: { size: viColWidths[ci], type: WidthType.PERCENTAGE },
+          shading: { type: 'solid', color: rowBg, fill: rowBg },
+          borders: viBorders, margins: { top: 40, bottom: 40, left: 80, right: 80 },
+          children: [new Paragraph({ children: [new TextRun({ text: String(text || ''), font: FONT, size: SIZE_SM })] })],
+        });
+        viRows.push(new TableRow({ children: [mkCell(fmtDate(v.visit_date),0), mkCell(v.rendering_provider,1), mkCell(v.practice_setting,2), mkCell(v.visit_type,3)] }));
+      });
+      sections_content.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows: viRows }));
+      sections_content.push(new Paragraph({ pageBreakBefore: true, children: [] }));
+    }
 
-    const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"/><meta http-equiv="Content-Type" content="text/html; charset=utf-8"/></head><body style="font-family:Calibri;margin:0.5in 0.5in 0.5in 0.5in">
-      ${viTable}
-      <p style="font-size:16pt;font-weight:bold;text-align:center;margin-bottom:16pt">MEDICAL RECORD SUMMARY</p>
-      <p style="font-size:11pt"><b>Patient:</b> ${patientName}</p>
-      <p style="font-size:11pt;margin-bottom:16pt"><b>Case Number:</b> ${caseNumber}</p>
-      ${visitRows}
-      <p style="font-size:9pt;color:#9CA3AF;margin-top:20pt">ChartReview Pro &nbsp;|&nbsp; Generated: ${now}</p>
-    </body></html>`;
+    // ── Summary ───────────────────────────────────────────────────────────
+    sections_content.push(new Paragraph({ children: [boldRun('MEDICAL RECORD SUMMARY', SIZE_TTL)], alignment: AlignmentType.CENTER, spacing: { after: 200 } }));
+    sections_content.push(new Paragraph({ spacing: { after: 40 }, children: [boldRun('Patient: '), normalRun(patientName)] }));
+    sections_content.push(new Paragraph({ spacing: { after: 40 }, children: [boldRun('Case Number: '), normalRun(caseNumber)] }));
+    sections_content.push(emptyPara());
 
-    const blob = new Blob([html], { type: 'application/msword' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${patientName.replace(/\s+/g, '_')}_Summary.doc`;
-    a.click(); URL.revokeObjectURL(a.href);
+    for (const visit of finalVisits) {
+      if (visit._ptBridge) {
+        sections_content.push(new Paragraph({
+          indent: { left: DATE_INDENT }, spacing: { before: 80, after: 80 },
+          border: { top: { style: BorderStyle.DASHED, size: 4, color: '999999' } },
+          children: [new TextRun({ text: `[ ${visit._ptCount} additional ${visit._ptProvider} visit${visit._ptCount !== 1 ? 's' : ''} omitted - see full record ]`, italics: true, color: '666666', size: SIZE_SM, font: FONT })],
+        }));
+        continue;
+      }
+      const dateStr = visit.visit_date ? fmtDate(visit.visit_date) + ':' : '';
+      const contentRuns: any[] = [];
+      if (visit.practice_setting)   contentRuns.push(normalRun(visit.practice_setting + '. '));
+      if (visit.rendering_provider) contentRuns.push(normalRun(visit.rendering_provider + '. '));
+      if (visit.hpi_summary) {
+        contentRuns.push(boldRun('HPI: '));
+        contentRuns.push(normalRun(visit.hpi_summary + ' '));
+        if (visit.injury_date) contentRuns.push(normalRun(`Injury Date: ${fmtDate(visit.injury_date)}. `));
+        if (visit.pain_scale && visit.pain_scale !== 'not_documented') contentRuns.push(normalRun(`Pain Scale: ${visit.pain_scale}. `));
+        if (visit.symptom_progression && visit.symptom_progression !== 'not_documented') {
+          const sp = visit.symptom_progression.charAt(0).toUpperCase() + visit.symptom_progression.slice(1);
+          contentRuns.push(normalRun(`Symptom Progression: ${sp}. `));
+        }
+      }
+      if (visit.physical_exam_findings) { contentRuns.push(boldRun('Physical Examination: ')); contentRuns.push(normalRun(visit.physical_exam_findings + ' ')); }
+      if (visit.imaging_findings)        { contentRuns.push(boldRun('Imaging Findings: '));     contentRuns.push(normalRun(visit.imaging_findings + ' ')); }
+      if (visit.lab_findings && (visit.lab_findings as string).trim()) { contentRuns.push(boldRun('Laboratory Findings: ')); contentRuns.push(normalRun(visit.lab_findings + ' ')); }
+      sections_content.push(visitPara(dateStr, contentRuns));
+      if (visit.impression_diagnosis) {
+        const diagRuns: any[] = [boldRun('Diagnosis: '), normalRun(visit.impression_diagnosis)];
+        if (visit.icd10_codes && (visit.icd10_codes as string[]).length > 0) diagRuns.push(normalRun(` (${(visit.icd10_codes as string[]).join(', ')})`));
+        sections_content.push(subPara(diagRuns));
+      }
+      if (visit.treatment_plan) sections_content.push(subPara([boldRun('Treatment Plan: '), normalRun(visit.treatment_plan)], { after: 120 }));
+    }
+
+    sections_content.push(emptyPara());
+    sections_content.push(new Paragraph({ alignment: AlignmentType.CENTER, children: [normalRun(`Generated by ChartReview Pro on ${new Date().toLocaleDateString()}`, SIZE_SM)] }));
+
+    const doc = new Document({
+      sections: [{ properties: { page: { margin: { top: 720, bottom: 720, left: 720, right: 720 } } }, children: sections_content }],
+    });
+
+    const buffer = await Packer.toBlob(doc);
+    const dlUrl = URL.createObjectURL(buffer);
+    const link = document.createElement('a');
+    link.href = dlUrl;
+    link.download = `Medical_Summary_${patientName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.docx`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(dlUrl);
   };
 
   // ── Visit Index ────────────────────────────────────────────────────────────
