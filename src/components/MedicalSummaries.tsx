@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, FileCheck, Eye, Edit, Download, FileDown, Merge, Plus, Users, CheckSquare, Trash2 } from "lucide-react";
+import { Loader2, FileCheck, Eye, Edit, Download, FileDown, Merge, Plus, Users, CheckSquare, Trash2, Filter } from "lucide-react";
 import MedicalSummaryForm from "./summaries/MedicalSummaryForm";
 import SummaryViewer from "./summaries/SummaryViewer";
 
@@ -918,7 +918,8 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
                                     </div>
                                   </div>
                                 </div>
-                              ))}
+                              );
+          })}
                             </CardContent>
                           </Card>
                         );
