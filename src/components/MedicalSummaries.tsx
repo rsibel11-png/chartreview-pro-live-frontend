@@ -377,16 +377,131 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
   });
 
   // ── Helpers ────────────────────────────────────────────────────────────────
-  const normalizePTSetting = (setting: string) => {
+  const toTitleCase = (str: string): string => {
+  if (!str) return str;
+  const letters = str.replace(/[^a-zA-Z]/g, '');
+  if (letters.length > 2 && letters === letters.toUpperCase()) {
+    const credentials = new Set(['MD', 'DO', 'PA', 'NP', 'RN', 'LPN', 'PT', 'OT', 'DC', 'DDS', 'DMD', 'DPM', 'PHD', 'APRN', 'LCSW', 'OTR', 'ATC', 'EMT', 'RPA']);
+    return str.replace(/[A-Z]+/g, (word: string) => credentials.has(word) ? word : word.charAt(0) + word.slice(1).toLowerCase());
+  }
+  return str;
+};
+
+const normalizePTSetting = (setting: string): string => {
     if (!setting) return setting;
     let s = setting.trim();
     s = s.replace(/\bPhys\.?\s*Ther\.?\b/gi, 'Physical Therapy');
     s = s.replace(/\bOcc\.?\s*Ther\.?\b/gi, 'Occupational Therapy');
+    s = s.replace(/\bOT\b(?!\s*[A-Z])/g, 'Occupational Therapy');
     s = s.replace(/\s+PT$/i, ' Physical Therapy');
     s = s.replace(/\s+OT$/i, ' Occupational Therapy');
     s = s.replace(/\s+/g, ' ').trim();
     return s;
   };
+  const sanitizeVisits = (visits: any[], patientName: string): any[] => {
+    if (!Array.isArray(visits)) return [];
+    const stringFields = ['visit_date','rendering_provider','practice_setting','hpi_summary','injury_date','pain_scale','symptom_progression','physical_exam_findings','imaging_findings','lab_findings','impression_diagnosis','treatment_plan'];
+    const validProgressions = ['improved','same','worse','not_documented'];
+
+    const EXCLUDED_PATTERNS = [
+      /pacu/i,
+      /post.?anesthesia/i,
+      /anesthesia\s+record/i,
+      /pre.?op\s+nursing/i,
+      /perioperative\s+nursing/i,
+      /nursing\s+document/i,
+      /preop\s+nursing/i,
+    ];
+
+    const isExcluded = (visit: any): boolean => {
+      const setting = (visit.practice_setting || '').toLowerCase();
+      if (setting.includes('c-4') || setting.includes('workers') || setting.includes('wcb')) return false;
+      const combined = `${visit.practice_setting || ''} ${visit.rendering_provider || ''}`;
+      return EXCLUDED_PATTERNS.some((rx: RegExp) => rx.test(combined));
+    };
+
+    const isLikelyMisdatedER = (visit: any): boolean => {
+      if (!visit.visit_date || !visit.injury_date) return false;
+      if (visit.visit_date !== visit.injury_date) return false;
+      const settingLower = (visit.practice_setting || '').toLowerCase();
+      if (settingLower.includes('c-4') || settingLower.includes('workers') || settingLower.includes('wcb')) return false;
+      return true;
+    };
+
+    const addOneDay = (dateStr: string): string => {
+      const [y, m, d] = dateStr.split('-').map(Number);
+      const dt = new Date(y, m - 1, d + 1);
+      return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    };
+
+    const enforceOneC4 = (visitList: any[]): any[] => {
+      const isC4 = (v: any) => {
+        const s = (v.practice_setting || '').toLowerCase();
+        return s.includes('c-4') || s.includes('wcb') || s.includes("workers' compensation report");
+      };
+      const c4s = visitList.filter(isC4);
+      if (c4s.length <= 1) return visitList;
+      const sorted = [...c4s].sort((a: any, b: any) => {
+        if (!a.visit_date) return 1;
+        if (!b.visit_date) return -1;
+        const diff = (a.visit_date||'').localeCompare(b.visit_date||'');
+        if (diff !== 0) return diff;
+        const aIsC4 = (a.practice_setting || '').toLowerCase().includes('c-4');
+        const bIsC4 = (b.practice_setting || '').toLowerCase().includes('c-4');
+        if (aIsC4 && !bIsC4) return -1;
+        if (!aIsC4 && bIsC4) return 1;
+        return diff;
+      });
+      const earliestDate = sorted[0].visit_date;
+      const c4sOnEarliestDate = c4s.filter((v: any) => v.visit_date === earliestDate);
+      const contentLength = (v: any) =>
+        [v.impression_diagnosis, v.rendering_provider, v.imaging_findings, v.hpi_summary, v.treatment_plan]
+          .map((s: any) => (s || '').trim()).join('').length;
+      const keepC4 = c4sOnEarliestDate.sort((a: any, b: any) => contentLength(b) - contentLength(a))[0];
+      return visitList.map((v: any) => {
+        if (isC4(v) && v !== keepC4) {
+          const cleaned = { ...v };
+          cleaned.practice_setting = (cleaned.practice_setting || '')
+            .replace(/c-4 workers'? compensation report/i, '')
+            .replace(/\(c-4 report\)/i, '')
+            .trim() || 'Office Visit';
+          return cleaned;
+        }
+        return v;
+      });
+    };
+
+    return enforceOneC4((visits || []).filter((visit: any) => !isExcluded(visit)))
+      .map((visit: any) => {
+        const clean = { ...visit };
+        stringFields.forEach((field: string) => {
+          const val = clean[field];
+          if (val === null || val === undefined || val === false) clean[field] = '';
+          else if (typeof val === 'object') clean[field] = JSON.stringify(val);
+          else if (typeof val !== 'string') clean[field] = String(val);
+        });
+        if (!Array.isArray(clean.icd10_codes)) clean.icd10_codes = [];
+        if (clean.rendering_provider) clean.rendering_provider = toTitleCase(clean.rendering_provider);
+        if (clean.practice_setting) clean.practice_setting = normalizePTSetting(clean.practice_setting);
+        if (!validProgressions.includes(clean.symptom_progression)) clean.symptom_progression = 'not_documented';
+        const patientLower = patientName?.toLowerCase();
+        if (clean.practice_setting && patientLower && clean.practice_setting.toLowerCase().includes(patientLower)) {
+          clean.practice_setting = '';
+        }
+        if (clean.practice_setting) {
+          clean.practice_setting = clean.practice_setting
+            .replace(/,\s*\d+\s+[A-Za-z].*$/, '')
+            .replace(/\s*\d{5}(?:-\d{4})?\s*$/, '')
+            .replace(/,\s*(?:Ste|Suite|Floor|Fl|Bldg|Building|Unit|#)\s*[\w-]+\s*$/i, '')
+            .trim()
+            .replace(/,\s*$/, '');
+        }
+        if (isLikelyMisdatedER(clean)) clean.visit_date = addOneDay(clean.injury_date);
+        return clean;
+      });
+  };
+
+
 
   const normalizeProviderForDedup = (name: string) => {
     return (name || '')
@@ -546,13 +661,15 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
       if (!jobResult) throw new Error('Generation timed out after 30 minutes');
       const rawVisits: any[] = Array.isArray(jobResult.visits) ? jobResult.visits : [];
       const patientName: string = jobResult.patient_name || '';
+      const cleanVisits: any[] = sanitizeVisits(rawVisits, patientName);
+      console.log(`generateSummary: ${rawVisits.length} raw -> ${cleanVisits.length} after sanitize`);
 
       // Save summary record to /summaries so it appears in the list
       genStore.set({ statusMsg: 'Saving summary...' });
       try {
         await awsProxy('/summaries', 'POST', {
           patient_name: patientName,
-          visits: rawVisits,
+          visits: cleanVisits,
           status: 'draft',
           doc_count: jobResult.doc_count || 0,
           visit_count: rawVisits.length,
@@ -603,7 +720,44 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
       return;
     }
 
-    const finalVisits = deduplicateVisits(sorted);
+    const isPTVisit = (v: any): boolean => {
+      const s = (v.practice_setting || '').toLowerCase();
+      return s.includes('physical therapy') || s.includes('occupational therapy') ||
+             s.includes('physio') || s === 'pt' || s.includes(' pt ') ||
+             s.includes('rehabilitation') || s.includes('hand therapy') ||
+             (s.includes('sport') && s.includes('rehab'));
+    };
+    const hasPTVisits = sorted.some((v: any) => isPTVisit(v));
+    const buildVisitList = (visits: any[], collapse: boolean): any[] => {
+      if (!collapse) return visits;
+      const ptGroups: Record<string, number[]> = {};
+      visits.forEach((v: any, idx: number) => {
+        if (!isPTVisit(v)) return;
+        const key = normalizePTSetting(v.practice_setting || 'pt').toLowerCase().trim();
+        if (!ptGroups[key]) ptGroups[key] = [];
+        ptGroups[key].push(idx);
+      });
+      const bridgedIndices = new Set<number>();
+      const bridgeInsertAfter: Record<number, any> = {};
+      Object.values(ptGroups).forEach((indices: number[]) => {
+        if (indices.length <= 2) return;
+        const first = indices[0];
+        indices.slice(1, -1).forEach((i: number) => bridgedIndices.add(i));
+        bridgeInsertAfter[first] = {
+          _ptBridge: true,
+          _ptCount: indices.length - 2,
+          _ptProvider: visits[first].practice_setting || 'Physical/Occupational Therapy',
+        };
+      });
+      const result: any[] = [];
+      visits.forEach((v: any, i: number) => {
+        if (bridgedIndices.has(i)) return;
+        result.push(v);
+        if (bridgeInsertAfter[i]) result.push(bridgeInsertAfter[i]);
+      });
+      return result;
+    };
+    const finalVisits = buildVisitList(deduplicateVisits(sorted), hasPTVisits);
     const patientName = (freshSummary.patient_name || 'Patient') as string;
     const caseNumber  = (freshSummary.case_number  || '')         as string;
 
