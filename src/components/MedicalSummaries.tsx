@@ -273,6 +273,7 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
   const [editingSummary, setEditingSummary] = useState<any>(null);
   const [deleteSummary, setDeleteSummary] = useState<any>(null);
   const [showDialog, setShowDialog] = useState(false);
+  const [includeAllPt, setIncludeAllPt] = useState(false);
   const [showCombineDialog, setShowCombineDialog] = useState(false);
   const [selectedSummariesToCombine, setSelectedSummariesToCombine] = useState<string[]>([]);
   const [_editing, _setEditing] = useState(false);
@@ -643,7 +644,7 @@ const normalizePTSetting = (setting: string): string => {
       }
       genStore.set({ statusMsg: `Sending ${docIds.length} documents to ChartReview AI...` });
       const startRes = await awsProxy('/summaries/generate', 'POST', {
-        doc_ids: docIds, patient_name: '', run_vi_prepass: true,
+        doc_ids: docIds, patient_name: '', run_vi_prepass: true, include_all_pt: includeAllPt,
       });
       const job_id = startRes?.job_id;
       if (!job_id) throw new Error('No job_id returned from generateSummaryStart');
@@ -1208,6 +1209,18 @@ const normalizePTSetting = (setting: string): string => {
               </div>
             </div>
           )}
+          <div className="flex items-center gap-2 mt-3">
+            <input
+              type="checkbox"
+              id="includeAllPt"
+              checked={includeAllPt}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setIncludeAllPt(e.target.checked)}
+              className="w-4 h-4 accent-blue-600"
+            />
+            <label htmlFor="includeAllPt" className="text-sm text-slate-600 cursor-pointer">
+              Include all PT sessions (default: first &amp; last only)
+            </label>
+          </div>
           <Button onClick={generateSummary} disabled={selectedDocuments.length === 0 || generatingSummary}
             className="w-full mt-4 bg-gradient-to-r from-blue-600 to-cyan-600">
             {generatingSummary
