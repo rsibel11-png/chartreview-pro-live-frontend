@@ -664,19 +664,24 @@ const normalizePTSetting = (setting: string): string => {
       const cleanVisits: any[] = sanitizeVisits(rawVisits, patientName);
       console.log(`generateSummary: ${rawVisits.length} raw -> ${cleanVisits.length} after sanitize`);
 
-      // Save summary record to /summaries so it appears in the list
-      genStore.set({ statusMsg: 'Saving summary...' });
-      try {
-        await awsProxy('/summaries', 'POST', {
-          patient_name: patientName,
-          visits: cleanVisits,
-          status: 'draft',
-          doc_count: jobResult.doc_count || 0,
-          visit_count: rawVisits.length,
-        });
-      } catch (saveErr: any) {
-        console.error('Failed to save summary record:', saveErr);
-        // Don't block the success message — still show completion
+      // Backend coordinator already saved the summary record (with case_number, polishing status).
+      // Only POST if aws_summary_id is absent (e.g. older backend without coordinator save).
+      if (!jobResult.aws_summary_id) {
+        genStore.set({ statusMsg: 'Saving summary...' });
+        try {
+          await awsProxy('/summaries', 'POST', {
+            patient_name: patientName,
+            case_number: jobResult.case_number || '',
+            visits: cleanVisits,
+            status: 'draft',
+            doc_count: jobResult.doc_count || 0,
+            visit_count: cleanVisits.length,
+          });
+        } catch (saveErr: any) {
+          console.error('Failed to save summary record:', saveErr);
+        }
+      } else {
+        console.log(`generateSummary: backend already saved summary ${jobResult.aws_summary_id} — skipping frontend POST`);
       }
 
       clearInterval(timerHandle);
