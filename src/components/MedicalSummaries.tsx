@@ -585,9 +585,6 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
       }
     } catch (_) {}
 
-    const fontFamily = 'Calibri';
-    const fontSize = 11;
-
     const sortedVisits: any[] = freshSummary.visits
       ? [...freshSummary.visits].sort((a: any, b: any) => {
           const da = (a.visit_date || '').trim();
@@ -609,74 +606,53 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
     const finalVisits = deduplicateVisits(sortedVisits);
     const patientName = freshSummary.patient_name || 'Patient';
 
+    // Strip non-ASCII (en-dash, em-dash, curly quotes, etc.) to plain ASCII
     const sanitize = (s: string) => (s || '')
-      .replace(/–|—/g, '-')
-      .replace(/‘|’/g, "'")
-      .replace(/“|”/g, '"')
-      .replace(/[•‣◦]/g, '-')
-      .replace(/[^ -]/g, '');
+      .replace(/\u2013|\u2014/g, '-')
+      .replace(/\u2018|\u2019/g, "'")
+      .replace(/\u201c|\u201d/g, '"')
+      .replace(/[\u2022\u2023\u25e6]/g, '-')
+      .replace(/[^\x00-\x7F]/g, '');
 
-    const visitsHtml = finalVisits.map((v: any) => {
-      let visitHTML = '';
-      // Date + facility row
-      visitHTML += `<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:0;margin-top:18pt;font-family:${fontFamily},Arial,sans-serif;font-size:${fontSize}pt;"><tr>`;
-      visitHTML += `<td valign="top" style="width:120px;padding-right:0;font-family:${fontFamily},Arial,sans-serif;font-size:${fontSize}pt;">`;
-      if (v.visit_date) {
-        const [yr, mo, dy] = v.visit_date.split('-').map(Number);
-        visitHTML += `<strong>${mo}/${dy}/${yr}:</strong>`;
-      }
-      visitHTML += '</td>';
-      visitHTML += `<td valign="top" style="text-align:left;font-family:${fontFamily},Arial,sans-serif;font-size:${fontSize}pt;">`;
-      if (v.practice_setting) visitHTML += `${sanitize(v.practice_setting)}. `;
-      if (v.rendering_provider) visitHTML += `${sanitize(v.rendering_provider)}. `;
-      if (v.hpi_summary) visitHTML += `<strong>HPI:</strong> ${sanitize(v.hpi_summary)} `;
-      if (v.physical_exam_findings) visitHTML += `<strong>Physical Examination:</strong> ${sanitize(v.physical_exam_findings)} `;
-      if (v.imaging_findings) visitHTML += `<strong>Imaging Findings:</strong> ${sanitize(v.imaging_findings)} `;
-      if (v.lab_findings && (v.lab_findings || '').trim().length > 0) visitHTML += `<strong>Laboratory Findings:</strong> ${sanitize(v.lab_findings)} `;
-      visitHTML += '</td></tr></table>';
+    const fieldLine = (label: string, val: string) =>
+      val ? `<br/><span style="color:#444;font-size:10.5pt"><b>${label}:</b> ${sanitize(val)}</span>` : '';
 
-      // Diagnosis row
-      if (v.impression_diagnosis) {
-        visitHTML += `<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:0;margin-top:6pt;font-family:${fontFamily},Arial,sans-serif;font-size:${fontSize}pt;"><tr>`;
-        visitHTML += '<td style="width:120px;"></td>';
-        visitHTML += `<td valign="top" style="text-align:left;"><strong>Diagnosis:</strong> ${sanitize(v.impression_diagnosis)}`;
-        if (v.icd10_codes && v.icd10_codes.length > 0) visitHTML += ` (ICD-10: ${v.icd10_codes.join(', ')})`;
-        visitHTML += '</td></tr></table>';
-      }
-
-      // Treatment plan row
-      if (v.treatment_plan) {
-        visitHTML += `<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:18pt;margin-top:6pt;font-family:${fontFamily},Arial,sans-serif;font-size:${fontSize}pt;"><tr>`;
-        visitHTML += '<td style="width:120px;"></td>';
-        visitHTML += `<td valign="top" style="text-align:left;"><strong>Treatment Plan:</strong> ${sanitize(v.treatment_plan)}</td></tr></table>`;
-      }
-
-      return visitHTML;
-    }).join('');
+    const rows = finalVisits.map((v: any) => {
+      const diagText = (v.impression_diagnosis || '')
+        + (v.icd10_codes && v.icd10_codes.length ? ` (ICD-10: ${v.icd10_codes.join(', ')})` : '');
+      return `
+      <p style="margin:0 0 10pt 0;padding-left:90pt;text-indent:-90pt;font-family:Calibri;font-size:11pt">
+        <b>${formatVisitDate(v.visit_date || '')}</b>&nbsp;&nbsp;${sanitize(v.practice_setting || '')} — ${sanitize(v.rendering_provider || '')}
+        ${fieldLine('HPI', v.hpi_summary || '')}
+        ${fieldLine('Physical Examination', v.physical_exam_findings || '')}
+        ${fieldLine('Imaging Findings', v.imaging_findings || '')}
+        ${fieldLine('Lab Findings', v.lab_findings || '')}
+        ${fieldLine('Impression/Diagnosis', diagText)}
+        ${fieldLine('Treatment Plan', v.treatment_plan || '')}
+      </p>`;
+    }).join('\n');
 
     const firstVisit = finalVisits.find((v: any) => v.visit_date);
     const lastVisit = [...finalVisits].reverse().find((v: any) => v.visit_date);
     const fmtDate = (d: string) => { const [y,m,dd] = d.split('-').map(Number); return `${m}/${dd}/${y}`; };
 
-    const html = `<!DOCTYPE html><html><head><meta charset='utf-8'><title>Medical Record Summary</title></head>
-<body style="font-family:${fontFamily},Arial,sans-serif;font-size:${fontSize}pt;line-height:1.6;margin:0.5in;">
-<h1 style="font-size:16pt;font-weight:bold;text-align:center;margin-bottom:24pt;text-decoration:underline;">MEDICAL RECORD SUMMARY</h1>
-<p><strong>Patient:</strong> ${sanitize(patientName)}</p>
-<p>&nbsp;</p>
-${visitsHtml}
-<p>&nbsp;</p>
-<p style="font-size:10pt;text-align:center;margin-top:24pt;">
-  Initial Visit: ${firstVisit ? fmtDate(firstVisit.visit_date) : 'N/A'} &nbsp;|&nbsp;
-  Final Visit: ${lastVisit ? fmtDate(lastVisit.visit_date) : 'N/A'}. ${finalVisits.length} visits attended.
-</p>
-<p style="font-size:10pt;text-align:center;margin-top:6pt;">Generated by ChartReview Pro on ${new Date().toLocaleDateString()}</p>
-</body></html>`;
+    const html = `<html><body style="margin:0.5in 0.5in 0.5in 0.5in">
+      <p style="font-family:Calibri;font-size:13pt;font-weight:bold;margin-bottom:16pt">${sanitize(patientName)} — Medical Summary</p>
+      ${rows}
+      <p style="font-family:Calibri;font-size:9pt;color:#888;margin-top:20pt;text-align:center;">
+        Initial Visit: ${firstVisit ? fmtDate(firstVisit.visit_date) : 'N/A'} &nbsp;|&nbsp;
+        Final Visit: ${lastVisit ? fmtDate(lastVisit.visit_date) : 'N/A'} &nbsp;|&nbsp;
+        ${finalVisits.length} visits attended.
+      </p>
+      <p style="font-family:Calibri;font-size:9pt;color:#888;margin-top:4pt;text-align:center;">Generated by ChartReview Pro on ${new Date().toLocaleDateString()}</p>
+    </body></html>`;
 
     const blob = new Blob([html], { type: 'application/msword' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `${patientName.replace(/\s+/g, '_')}_Summary.doc`;
-    a.click(); URL.revokeObjectURL(url);
+    const a_el = document.createElement('a');
+    a_el.href = URL.createObjectURL(blob);
+    a_el.download = `${sanitize(patientName).replace(/\s+/g, '_')}_Summary.doc`;
+    a_el.click();
+    URL.revokeObjectURL(a_el.href);
   };
 
   // ── Visit Index ────────────────────────────────────────────────────────────
