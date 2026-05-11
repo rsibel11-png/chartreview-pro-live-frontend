@@ -657,7 +657,7 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
       const diagText = (v.impression_diagnosis || '') + (icd ? ` (ICD-10: ${icd})` : '');
       return `
       <p style="margin:0 0 10pt 0;padding-left:90pt;text-indent:-90pt;font-family:Calibri;font-size:11pt">
-        <b>${fmtD(v.visit_date)}:</b>&nbsp;&nbsp;${v.practice_setting || ''} — ${v.rendering_provider || ''}
+        <b>${fmtD(v.visit_date)}:</b>  ${v.practice_setting || ''} - ${v.rendering_provider || ''}
         ${field('CC',      v.chief_complaint       || '')}
         ${field('HPI',     v.hpi_summary           || '')}
         ${field('Exam',    v.physical_exam_findings || '')}
@@ -670,7 +670,7 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
 
     const now = new Date().toLocaleString('en-US', { month:'2-digit', day:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', hour12:true });
 
-    const html = `<html><body style="font-family:Calibri;margin:0.5in 0.5in 0.5in 0.5in">
+    const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"/><meta http-equiv="Content-Type" content="text/html; charset=utf-8"/></head><body style="font-family:Calibri;margin:0.5in 0.5in 0.5in 0.5in">
       ${viTable}
       <p style="font-size:16pt;font-weight:bold;text-align:center;margin-bottom:16pt">MEDICAL RECORD SUMMARY</p>
       <p style="font-size:11pt"><b>Patient:</b> ${patientName}</p>
