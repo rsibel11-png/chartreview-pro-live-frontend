@@ -944,30 +944,36 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
         </div>
       ) : summaries.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {summaries.map((summary: any) => (
-            <Card key={summary.aws_summary_id || summary.id} className="hover:shadow-lg transition-all duration-300 group">
+          {summaries.map((summary: any) => {
+            const isPolishing = summary.status === 'polishing';
+            return (
+            <Card key={summary.aws_summary_id || summary.id} className={`hover:shadow-lg transition-all duration-300 group${isPolishing ? ' opacity-60' : ''}`}>
               <CardContent className="p-6">
                 <div className="space-y-4">
                   <div className="flex items-start justify-between">
                     <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-100 to-emerald-100 flex items-center justify-center">
-                      <FileCheck className="w-6 h-6 text-green-600" />
+                      {isPolishing
+                        ? <Loader2 className="w-6 h-6 text-green-600 animate-spin" />
+                        : <FileCheck className="w-6 h-6 text-green-600" />}
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant="outline" className={
-                        summary.status === 'finalized' ? 'bg-green-50 text-green-700 border-green-200'
+                        isPolishing ? 'bg-yellow-50 text-yellow-700 border-yellow-200'
+                        : summary.status === 'finalized' ? 'bg-green-50 text-green-700 border-green-200'
                         : summary.status === 'reviewed' ? 'bg-blue-50 text-blue-700 border-blue-200'
                         : 'bg-slate-50 text-slate-700 border-slate-200'
-                      }>{summary.status}</Badge>
-                      <Button variant="ghost" size="icon"
+                      }>{isPolishing ? 'polishing...' : summary.status}</Badge>
+                      {!isPolishing && <Button variant="ghost" size="icon"
                         className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-red-600 hover:text-red-700 hover:bg-red-50"
                         onClick={() => setDeleteSummary(summary)}>
                         <Trash2 className="w-4 h-4" />
-                      </Button>
+                      </Button>}
                     </div>
                   </div>
                   <div>
                     <h3 className="font-semibold text-slate-900 mb-2">{summary.patient_name || 'Unnamed Patient'}</h3>
                     <p className="text-sm text-slate-600">{summary.visits?.length || 0} visit{summary.visits?.length !== 1 ? 's' : ''}</p>
+                    {isPolishing && <p className="text-xs text-yellow-600 mt-1">Finalizing summary — will be ready shortly</p>}
                     {summary.document_id?.includes(',') && (
                       <Badge variant="outline" className="mt-2 bg-purple-50 text-purple-700 border-purple-200">
                         <Users className="w-3 h-3 mr-1" />Combined
@@ -975,14 +981,14 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
                     )}
                   </div>
                   <div className="flex gap-1.5 justify-center">
-                    <Button variant="outline" size="sm" className="flex-1" title="View" onClick={() => setViewingSummary(summary)}>
+                    <Button variant="outline" size="sm" className="flex-1" title="View" disabled={isPolishing} onClick={() => setViewingSummary(summary)}>
                       <Eye className="w-4 h-4" />
                     </Button>
-                    <Button variant="outline" size="sm" className="flex-1" title="Edit"
+                    <Button variant="outline" size="sm" className="flex-1" title="Edit" disabled={isPolishing}
                       onClick={() => { setEditing(true); setEditingSummary(normalizeSummaryForEdit(summary)); }}>
                       <Edit className="w-4 h-4" />
                     </Button>
-                    <Button variant="outline" size="sm" className="flex-1" title="Export to Word"
+                    <Button variant="outline" size="sm" className="flex-1" title="Export to Word" disabled={isPolishing}
                       onClick={() => exportToWord(summary)}>
                       <Download className="w-4 h-4" />
                     </Button>
