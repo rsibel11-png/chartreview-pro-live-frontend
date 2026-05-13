@@ -806,7 +806,10 @@ const normalizePTSetting = (setting: string): string => {
       });
       return result;
     };
-    const finalVisits = buildVisitList(deduplicateVisits(sorted), false); // PT consolidation disabled — show all visits
+    // Updated: 2026-05-13 — sanitize at export time so old saved records also get cleaned
+    const patientNameForSanitize: string = (freshSummary.patient_name || '') as string;
+    const sanitizedForExport: any[] = sanitizeVisits(sorted, patientNameForSanitize);
+    const finalVisits = buildVisitList(deduplicateVisits(sanitizedForExport), false); // PT consolidation disabled — show all visits
     const patientName = (freshSummary.patient_name || 'Patient') as string;
     const caseNumber  = (freshSummary.case_number  || '')         as string;
 
