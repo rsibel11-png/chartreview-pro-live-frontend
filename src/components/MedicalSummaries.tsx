@@ -407,11 +407,14 @@ const normalizePTSetting = (setting: string): string => {
     const EXCLUDED_PATTERNS = [
       /pacu/i,
       /post.?anesthesia/i,
-      /anesthesia\s+record/i,
-      /pre.?op\s+nursing/i,
-      /perioperative\s+nursing/i,
-      /nursing\s+document/i,
-      /preop\s+nursing/i,
+      /anesthesia/i,                       // anesthesia record/report/note variants
+      /pre.?op(?!erative\s+report)/i,     // pre-op assessment/nursing, but NOT operative report
+      /preoperative(?!\s+report)/i,
+      /perioperative/i,
+      /nursing\s+(document|record)/i,
+      /surgical\s+case\s+record/i,
+      /admission\s+orders/i,
+      /inpatient\s+(pain\s+management|medicine)(?!.*progress|.*discharge|.*consult)/i,
     ];
 
     const isExcluded = (visit: any): boolean => {
@@ -474,7 +477,7 @@ const normalizePTSetting = (setting: string): string => {
 
     return enforceOneC4((visits || []).filter((visit: any) => !isExcluded(visit)))
       .map((visit: any) => {
-        const clean = { ...visit };
+        const clean = { ...stripLabFindings(visit) };
         stringFields.forEach((field: string) => {
           const val = clean[field];
           if (val === null || val === undefined || val === false) clean[field] = '';
@@ -1544,4 +1547,13 @@ const normalizePTSetting = (setting: string): string => {
 
     </div>
   );
-}
+}    // Strip lab_findings from non-lab visits — consult/inpatient lab lists are noise in med-legal summaries.
+    // Updated: 2026-05-13
+    const stripLabFindings = (visit: any): any => {
+      const setting = (visit.practice_setting || '').toLowerCase();
+      const isLabReport = /\blab\b|patholog|microbio|blood\s+work|\bCBC\b|\bCMP\b|culture/i.test(setting);
+      if (isLabReport) return visit;
+      return { ...visit, lab_findings: '' };
+    };
+
+
