@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
+    })).sort(visitSortComparator);/* eslint-disable @typescript-eslint/no-unused-vars */
 // MedicalSummaries.tsx — chartreview-native-frontend
 // Ported: 2026-05-03 — CRA/TypeScript port of MedicalSummaries v56
 // Fixes: env vars, no base44 imports, all callbacks typed, opts:any,
@@ -399,6 +399,29 @@ const normalizePTSetting = (setting: string): string => {
     s = s.replace(/\s+/g, ' ').trim();
     return s;
   };
+  // Updated: 2026-05-13 — robust date sort
+  const parseDateSortKey = (d: any): string => {
+    if (!d) return '9999-99-99';
+    const m = String(d).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (!m) return String(d);
+    return `${m[3]}-${m[1].padStart(2,'0')}-${m[2].padStart(2,'0')}`;
+  };
+  const CLINICAL_DOC_ORDER_SORT: RegExp[] = [
+    /c-4|workers.*comp/i, /emergency\s+department|urgent\s+care/i,
+    /history\s*(&|and)\s*physical|\bh&p\b/i, /consultation/i,
+    /operative\s+report|surgical\s+report/i, /progress\s+note|hospitalist/i,
+    /discharge/i,
+  ];
+  const clinicalDocRank = (v: any): number => {
+    const s: string = (v.practice_setting || '').toLowerCase();
+    for (let i = 0; i < CLINICAL_DOC_ORDER_SORT.length; i++) { if (CLINICAL_DOC_ORDER_SORT[i].test(s)) return i; }
+    return CLINICAL_DOC_ORDER_SORT.length;
+  };
+  const visitSortComparator = (a: any, b: any): number => {
+    const da = parseDateSortKey(a.visit_date), db = parseDateSortKey(b.visit_date);
+    if (da < db) return -1; if (da > db) return 1;
+    return clinicalDocRank(a) - clinicalDocRank(b);
+  };
   const sanitizeVisits = (visits: any[], patientName: string): any[] => {
     if (!Array.isArray(visits)) return [];
     const stringFields = ['visit_date','rendering_provider','practice_setting','hpi_summary','injury_date','pain_scale','symptom_progression','physical_exam_findings','imaging_findings','lab_findings','impression_diagnosis','treatment_plan'];
@@ -451,17 +474,7 @@ const normalizePTSetting = (setting: string): string => {
       };
       const c4s = visitList.filter(isC4);
       if (c4s.length <= 1) return visitList;
-      const sorted = [...c4s].sort((a: any, b: any) => {
-        if (!a.visit_date) return 1;
-        if (!b.visit_date) return -1;
-        const diff = (a.visit_date||'').localeCompare(b.visit_date||'');
-        if (diff !== 0) return diff;
-        const aIsC4 = (a.practice_setting || '').toLowerCase().includes('c-4');
-        const bIsC4 = (b.practice_setting || '').toLowerCase().includes('c-4');
-        if (aIsC4 && !bIsC4) return -1;
-        if (!aIsC4 && bIsC4) return 1;
-        return diff;
-      });
+      const sorted = [...c4s].sort(visitSortComparator);
       const earliestDate = sorted[0].visit_date;
       const c4sOnEarliestDate = c4s.filter((v: any) => v.visit_date === earliestDate);
       const contentLength = (v: any) =>
@@ -757,18 +770,7 @@ const normalizePTSetting = (setting: string): string => {
       }
     } catch (_) {}
 
-    const sorted: any[] = freshSummary.visits
-      ? [...freshSummary.visits].sort((a: any, b: any) => {
-          const da = (a.visit_date || '').trim();
-          const db = (b.visit_date || '').trim();
-          if (!da) return 1; if (!db) return -1;
-          if (da !== db) return da < db ? -1 : 1;
-          const ac4 = (a.practice_setting || '').toLowerCase().includes('c-4');
-          const bc4 = (b.practice_setting || '').toLowerCase().includes('c-4');
-          if (ac4 && !bc4) return -1; if (!ac4 && bc4) return 1;
-          return 0;
-        })
-      : [];
+    const sorted: any[] = freshSummary.visits ? [...freshSummary.visits].sort(visitSortComparator) : [];
 
     if (!sorted.length) {
       alert('This summary has no visits saved. Please open Edit, make any change, and Save Summary before exporting.');
@@ -874,11 +876,7 @@ const normalizePTSetting = (setting: string): string => {
       rendering_provider: v.rendering_provider || '',
       practice_setting: v.practice_setting || '',
       visit_type: v.visit_type || inferVisitType(v.practice_setting || ''),
-    })).sort((a: any, b: any) => {
-      const da = (a.visit_date || '').trim(); const db = (b.visit_date || '').trim();
-      if (!da) return 1; if (!db) return -1;
-      return da < db ? -1 : da > db ? 1 : 0;
-    });
+    })).sort(visitSortComparator);
 
     if (viVisits.length > 0) {
       sections_content.push(new Paragraph({ children: [new TextRun({ text: 'Visit Index', bold: true, color: '2563EB', size: ptToHalfPt(18), font: FONT })], spacing: { after: 100 } }));
