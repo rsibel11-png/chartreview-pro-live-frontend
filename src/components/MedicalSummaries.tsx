@@ -407,15 +407,21 @@ const normalizePTSetting = (setting: string): string => {
     const EXCLUDED_PATTERNS = [
       /pacu/i,
       /post.?anesthesia/i,
-      /anesthesia/i,                       // anesthesia record/report/note variants
-      /pre.?op(?!erative\s+report)/i,     // pre-op assessment/nursing, but NOT operative report
+      /anesthesia/i,
+      /pre.?op(?!erative\s+report)/i,
       /preoperative(?!\s+report)/i,
       /perioperative/i,
       /nursing\s+(document|record)/i,
       /surgical\s+case\s+record/i,
       /admission\s+orders/i,
+      /inpatient\s+admission/i,
+      /inpatient\s+pharmacy/i,
+      /pharmacy\s*(\/?\s*orders)?/i,
       /inpatient\s+(pain\s+management|medicine)(?!.*progress|.*discharge|.*consult)/i,
-    ];
+      /\bcorrespondence\b/i,
+      /claims?\s+(specialist|adjuster|manager|administrator)/i,
+      /utilization\s+review/i,
+    ];;
 
     const isExcluded = (visit: any): boolean => {
       const setting = (visit.practice_setting || '').toLowerCase();
