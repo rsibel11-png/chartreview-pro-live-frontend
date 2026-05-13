@@ -1,4 +1,4 @@
-    })).sort(visitSortComparator);/* eslint-disable @typescript-eslint/no-unused-vars */
+/* eslint-disable @typescript-eslint/no-unused-vars */
 // MedicalSummaries.tsx — chartreview-native-frontend
 // Ported: 2026-05-03 — CRA/TypeScript port of MedicalSummaries v56
 // Fixes: env vars, no base44 imports, all callbacks typed, opts:any,
