@@ -699,8 +699,11 @@ const normalizePTSetting = (setting: string): string => {
       if (!jobResult) throw new Error('Generation timed out after 30 minutes');
       const rawVisits: any[] = Array.isArray(jobResult.visits) ? jobResult.visits : [];
       const patientName: string = jobResult.patient_name || '';
-      const cleanVisits: any[] = sanitizeVisits(rawVisits, patientName);
-      console.log(`generateSummary: ${rawVisits.length} raw -> ${cleanVisits.length} after sanitize`);
+      const sanitizedVisits: any[] = sanitizeVisits(rawVisits, patientName);
+      // Auto-dedup: merge visits with same date+provider immediately after sanitize
+      // Updated: 2026-05-13 — run merge-dedup automatically so output is clean without manual button press
+      const cleanVisits: any[] = deduplicateVisits(sanitizedVisits);
+      console.log(`generateSummary: ${rawVisits.length} raw -> ${sanitizedVisits.length} after sanitize -> ${cleanVisits.length} after dedup`);
 
       // Backend coordinator already saved the summary record (with case_number, polishing status).
       // Only POST if aws_summary_id is absent (e.g. older backend without coordinator save).
