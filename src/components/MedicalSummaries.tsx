@@ -507,11 +507,14 @@ const normalizePTSetting = (setting: string): string => {
   const normalizeProviderForDedup = (name: string) => {
     return (name || '')
       .toLowerCase()
-      .replace(/,?\s*(m\.?d\.?|d\.?o\.?|ph\.?d\.?|np|pa|pt|dpt|ot|rn|lcsw|psyd|esq\.?)/gi, '')
-      .replace(/[a-z]\.\s*/g, '')
+      .replace(/\s*[\(\[].*?[\)\]]\s*/g, ' ')              // strip (Henderson), [NW], etc.
+      .replace(/\s*[-\u2013]\s*(henderson|las vegas|northwest|nw|summerlin|north|south|east|west|lake mead|blue diamond|rainbow|sahara|flamingo|tropicana|boulder|aliante|centennial|sunrise|green valley|anthem)\b.*/i, '') // strip location after dash
+      .replace(/,?\s*(m\.?d\.?|d\.?o\.?|ph\.?d\.?|np|pa|pt|dpt|ot|rn|lcsw|psyd|esq\.?)/gi, '') // strip credentials
+      .replace(/[a-z]\.\s*/g, '')                              // strip middle initials
       .replace(/[^a-z\s]/g, '')
-      .replace(/\s+/g, ' ').trim();
-  };
+      .replace(/\s+/g, ' ')
+      .trim();
+  };;
 
   const normalizeSummaryForEdit = (s: any) => {
     if (!s) return s;
@@ -523,20 +526,54 @@ const normalizePTSetting = (setting: string): string => {
     return { ...s, visits };
   };
 
+  const mergeVisitPair = (a: any, b: any): any => {
+    const narrativeFields = ['hpi_summary', 'physical_exam_findings', 'treatment_plan', 'impression_diagnosis', 'chief_complaint'];
+    const concatFields    = ['imaging_findings', 'lab_findings'];
+    const scalarFields    = ['visit_date', 'rendering_provider', 'practice_setting', 'injury_date', 'pain_scale'];
+    const progressionRank: Record<string, number> = { improved: 3, worse: 2, same: 1, not_documented: 0 };
+    const merged: any = { ...a };
+    for (const f of narrativeFields) {
+      const av = (a[f] || '').trim();
+      const bv = (b[f] || '').trim();
+      if (bv.length > av.length) merged[f] = bv;
+    }
+    for (const f of concatFields) {
+      const av = (a[f] || '').trim();
+      const bv = (b[f] || '').trim();
+      if (bv && !av.toLowerCase().includes(bv.toLowerCase().slice(0, 20))) {
+        merged[f] = av ? `${av}; ${bv}` : bv;
+      }
+    }
+    for (const f of scalarFields) {
+      if (!merged[f] && b[f]) merged[f] = b[f];
+    }
+    const ar = progressionRank[a.symptom_progression] ?? 0;
+    const br = progressionRank[b.symptom_progression] ?? 0;
+    if (br > ar) merged.symptom_progression = b.symptom_progression;
+    return merged;
+  };
+
   const deduplicateVisits = (visits: any[]) => {
     const visitList = visits || [];
-    const exactKeys = new Set<string>();
-    return visitList.filter((visit: any) => {
-      const dateKey = (visit.visit_date || '').trim().toLowerCase();
+    const groups = new Map<string, any[]>();
+    const order: string[] = [];
+    for (const visit of visitList) {
+      const dateKey     = (visit.visit_date || '').trim();
       const providerKey = normalizeProviderForDedup(visit.rendering_provider);
-      const settingKey = normalizePTSetting(visit.practice_setting || '').trim().toLowerCase();
-      if (!dateKey && !providerKey) return true;
-      const key = `${dateKey}|${providerKey}|${settingKey}`;
-      if (exactKeys.has(key)) return false;
-      exactKeys.add(key);
-      return true;
-    });
-  };
+      if (!dateKey && !providerKey) {
+        const uid = `__nokey_${Math.random()}`;
+        groups.set(uid, [visit]);
+        order.push(uid);
+        continue;
+      }
+      const setting = (visit.practice_setting || '').toLowerCase();
+      const isOpReport = /operative report|surgical report|operation report/i.test(setting);
+      const key = isOpReport ? `${dateKey}|${providerKey}|__op__` : `${dateKey}|${providerKey}`;
+      if (!groups.has(key)) { groups.set(key, []); order.push(key); }
+      groups.get(key)!.push(visit);
+    }
+    return order.map(key => groups.get(key)!.reduce((acc, cur) => mergeVisitPair(acc, cur)));
+  };;
 
   const normalizeProviderName = (name: string) => {
     return (name || '').trim().toLowerCase()
