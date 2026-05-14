@@ -122,6 +122,34 @@ function sanitizeFilename(name: string): string {
     .replace(/[^a-zA-Z0-9._\-()]/g, "_")
     .replace(/_+/g, "_");
 }
+function inferFolderFromFilename(filename: string): string | null {
+  // Strip extension
+  const base = filename.replace(/\.[^.]+$/, '');
+  // Split on underscores only (preserves MORA-MALDONADO as one token)
+  const tokens = base.split('_');
+  // Find indices of ALL-CAPS tokens (optionally hyphenated, min 2 chars or single letter)
+  const capIndices: number[] = [];
+  tokens.forEach((t, i) => {
+    if (/^[A-Z][A-Z\-]*[A-Z]$|^[A-Z]$/.test(t)) capIndices.push(i);
+  });
+  if (capIndices.length < 2) return null;
+  // Find longest consecutive run of cap tokens
+  let best: number[] = [], cur: number[] = [capIndices[0]];
+  for (let k = 1; k < capIndices.length; k++) {
+    if (capIndices[k] === cur[cur.length - 1] + 1) { cur.push(capIndices[k]); }
+    else { if (cur.length > best.length) best = cur; cur = [capIndices[k]]; }
+  }
+  if (cur.length > best.length) best = cur;
+  if (best.length < 2) return null;
+  const nameToks = best.map(i => tokens[i]);
+  const last = nameToks[0]; // e.g. MORA-MALDONADO
+  const firstParts = nameToks.slice(1).filter(t => t.length > 1); // drop bare initials
+  const first = (firstParts.length ? firstParts : nameToks.slice(1))
+    .map(t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase()).join(' ');
+  return first ? `${last}, ${first}` : last;
+}
+
+
 
 function formatSize(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
@@ -379,6 +407,15 @@ export default function Upload({ onNavigate, idToken = "" }: { onNavigate?: (pag
     }));
     setFileItems((prev: any[]) => [...prev, ...items]);
     setAllDone(false);
+    // Auto-suggest folder from filename if folder is currently empty
+    setFolder((prev: string) => {
+      if (prev.trim()) return prev; // don't overwrite user's existing folder
+      for (const f of newFiles) {
+        const suggested = inferFolderFromFilename(f.name);
+        if (suggested) return suggested;
+      }
+      return prev;
+    });
   }, []);
 
   const removeFile = (id: string) => setFileItems((prev: any[]) => prev.filter((f: any) => f.id !== id));
