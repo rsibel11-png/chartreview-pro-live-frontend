@@ -577,7 +577,7 @@ export default function Upload({ onNavigate, idToken = "" }: { onNavigate?: (pag
           {folder !== "" && (
             <Input
               placeholder="e.g. John Doe — Case 12345"
-              value={folder.trim()}
+              value={folder}
               onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFolder(e.target.value)}
               className="mt-1"
               autoFocus
