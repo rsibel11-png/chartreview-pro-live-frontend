@@ -1312,7 +1312,7 @@ const normalizePTSetting = (setting: string): string => {
                   </div>
                   <div>
                     <h3 className="font-semibold text-slate-900 mb-2">{summary.patient_name || 'Unnamed Patient'}</h3>
-                    <p className="text-sm text-slate-600">{summary.visits?.length || 0} visit{summary.visits?.length !== 1 ? 's' : ''}</p>
+                    <p className="text-sm text-slate-600">{(summary.visit_count ?? summary.visits?.length) || 0} visit{((summary.visit_count ?? summary.visits?.length) !== 1) ? 's' : ''}</p>
                     {summary.document_id?.includes(',') && (
                       <Badge variant="outline" className="mt-2 bg-purple-50 text-purple-700 border-purple-200">
                         <Users className="w-3 h-3 mr-1" />Combined
