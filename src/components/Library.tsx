@@ -8,7 +8,7 @@
  * - All other logic identical to CRPv5 v54
  */
 
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import {
@@ -130,55 +130,20 @@ const DialogDescription = ({ children }: any) => <p className="text-sm text-slat
 // ────────────────────────────────────────────────────────────────────────────
 
 // v26: localStorage-backed set -- survives both remounts AND full browser refreshes
-const ASSESSED_STORAGE_KEY = 'crpv5_assessed_ids';
-const _classifiedSessionIds = (() => {
-  try {
-    const stored = localStorage.getItem(ASSESSED_STORAGE_KEY);
-    return new Set(stored ? JSON.parse(stored) : []);
-  } catch { return new Set(); }
-})();
 const _persistAssessed = (id: string) => {
-  _classifiedSessionIds.add(id);
   try {
-    localStorage.setItem(ASSESSED_STORAGE_KEY, JSON.stringify(Array.from(_classifiedSessionIds)));
   } catch {}
 };
 const _clearAssessed = (id: string) => {
-  _classifiedSessionIds.delete(id);
   try {
-    localStorage.setItem(ASSESSED_STORAGE_KEY, JSON.stringify(Array.from(_classifiedSessionIds)));
   } catch {}
 };
 
-// v51: classify queue -- serialized (1 at a time) to prevent concurrent Bedrock
 // calls from pushing each other over API Gateway's 29s timeout on large files.
 // Large PDFs (8MB+) need the full budget. Speed is recovered by the assembly
 // line approach (summary starts on completed parts while later parts still assess).
-const CLASSIFY_CONCURRENCY = 1;
-let _classifyActiveCount = 0;
-const _classifyQueue = []; // array of () => Promise<void>
-
-function _runClassifyQueue() {
-  while (_classifyActiveCount < CLASSIFY_CONCURRENCY && _classifyQueue.length > 0) {
-    const task = _classifyQueue.shift();
-    _classifyActiveCount++;
-    task().finally(() => {
-      _classifyActiveCount--;
-      _runClassifyQueue();
-    });
-  }
-}
-
-function enqueueClassify(fn) {
-  return new Promise((resolve, reject) => {
-    _classifyQueue.push(() => fn().then(resolve, reject));
-    _runClassifyQueue();
-  });
-}
-
 
 // ---------------------------------------------------------------------------
-// PDF page renderer -- used inside ClassificationModal only.
 // Loads the PDF once when the modal opens, renders one page at a time on demand.
 // Module-level so pdfjs instance is shared across modal opens.
 // ---------------------------------------------------------------------------
@@ -204,273 +169,12 @@ const _getPdfjs = () => new Promise((resolve, reject) => {
   document.head.appendChild(script);
 });
 
-// ModalPdfViewer: renders a single page of a PDF part inside the ClassificationModal.
 // partId (string) + localPageNum (number) are stable primitives -- memo bails out correctly.
 // Caches the loaded pdf document object in window._crpPdfCache[partId] so page navigation
 // is instant without re-fetching the whole PDF.
-const ModalPdfViewer = React.memo(({ partId, localPageNum, scale = 1.2, idToken }: { partId: string; localPageNum: number; scale?: number; idToken?: string }) => {
-  const canvasRef = useRef(null);
-  const renderTaskRef = useRef(null);
-  const [status, setStatus] = useState("idle");
-
-  useEffect(() => {
-    let cancelled = false;
-    setStatus("loading");
-    (async () => {
-      try {
-        if (!window._crpUrlCache) window._crpUrlCache = {};
-        if (!window._crpUrlCache[partId]) {
-          const res = await fetch(`${AWS_API_URL}/documents/${partId}/download-url`, {
-            method: "GET",
-            headers: {
-              "x-api-key": API_KEY,
-              "Authorization": `Bearer ${idToken || ""}`,
-              "x-org-id": ORG_ID,
-            },
-          });
-          const json = await res.json();
-          window._crpUrlCache[partId] = json.download_url || json.url || null;
-        }
-        const url = window._crpUrlCache[partId];
-        if (!url || cancelled) return;
-        const pdfjsLib: any = await _getPdfjs();
-        if (!window._crpPdfCache) window._crpPdfCache = {};
-        if (!window._crpPdfCache[partId]) {
-          window._crpPdfCache[partId] = await pdfjsLib.getDocument({ url, disableStream: true }).promise;
-        }
-        const pdf = window._crpPdfCache[partId];
-        if (cancelled) return;
-        const page = await pdf.getPage(localPageNum);
-        if (cancelled) return;
-        const viewport = page.getViewport({ scale });
-        const canvas = canvasRef.current;
-        if (!canvas || cancelled) return;
-        canvas.width = viewport.width;
-        canvas.height = viewport.height;
-        if (renderTaskRef.current) { try { renderTaskRef.current.cancel(); } catch {} }
-        const ctx = canvas.getContext("2d");
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        renderTaskRef.current = page.render({ canvasContext: ctx, viewport });
-        await renderTaskRef.current.promise;
-        if (!cancelled) setStatus("done");
-      } catch (err) {
-        if (!cancelled && err?.name !== "RenderingCancelledException") {
-          console.warn("ModalPdfViewer error:", err.message);
-          setStatus("error");
-        }
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [partId, localPageNum, scale]);
-
-  return (
-    <div className="relative w-full flex items-center justify-center bg-slate-200 rounded-lg overflow-auto" style={{ minHeight: 320 }}>
-      {status === "loading" && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-          <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
-          <span className="text-xs text-slate-500">Loading page...</span>
-        </div>
-      )}
-      {status === "error" && (
-        <div className="absolute inset-0 flex items-center justify-center text-red-400 text-sm">
-          Could not render page
-        </div>
-      )}
-      <canvas ref={canvasRef} className="max-w-full shadow-md" style={{ display: status === "done" ? "block" : "none" }} />
-    </div>
-  );
-});
 
 // =============================================================================
-// ClassificationModal — hoisted to module level so it never remounts during
-// Library re-renders triggered by classify polling state updates.
 // =============================================================================
-const ClassificationModal = React.memo(({
-  inspectDoc,
-  pageClassifications,
-  inspectPage,
-  restoringIds,
-  setInspectDoc,
-  setInspectPage,
-  getNonClinicalPages,
-  restoreAllPages,
-  restorePage,
-  deleteMutation,
-  idToken,
-}: {
-  inspectDoc: any;
-  pageClassifications: any;
-  inspectPage: number;
-  restoringIds: any;
-  setInspectDoc: (d: any) => void;
-  setInspectPage: (fn: any) => void;
-  getNonClinicalPages: (id: string) => any[];
-  restoreAllPages: (id: string) => void;
-  restorePage: (id: string, page: number) => void;
-  deleteMutation: any;
-  idToken: string;
-}) => {
-    if (!inspectDoc) return null;
-    const docId = inspectDoc.id;
-    const allPages = pageClassifications[docId] || [];
-    const nonClinical = getNonClinicalPages(docId);
-    const isRestoring = restoringIds.has(docId);
-    const totalPages = allPages.length;
-
-    const currentEntry = allPages.find((p) => p.page === inspectPage) || allPages[0];
-    const partId = currentEntry?.part_id;
-    const localPageNum = (() => {
-      if (!currentEntry) return 1;
-      const partPages = allPages.filter((p) => p.part_id === currentEntry.part_id);
-      return (partPages.findIndex((p) => p.page === currentEntry.page) + 1) || 1;
-    })();
-    const isClinical = currentEntry ? (currentEntry.is_clinical || currentEntry.restored) : true;
-
-    return (
-      <div className="fixed inset-0 z-50 flex flex-col bg-white">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-3 border-b border-slate-200 bg-slate-50 shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
-            <button onClick={() => setInspectDoc(null)} className="text-slate-500 hover:text-slate-700 shrink-0">
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <div className="min-w-0">
-              <h2 className="font-semibold text-slate-900 truncate">{inspectDoc.title}</h2>
-              <p className="text-xs text-slate-500">{totalPages} pages -- {nonClinical.length} flagged non-clinical</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            {nonClinical.length > 0 && (
-              <button
-                onClick={() => restoreAllPages(docId)}
-                disabled={isRestoring}
-                className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1.5 transition-colors"
-              >
-                {isRestoring ? <><Loader2 className="w-4 h-4 animate-spin" /> Restoring...</> : <><CheckCircle2 className="w-4 h-4" /> Restore All</>}
-              </button>
-            )}
-            <button
-              onClick={() => { setInspectDoc(null); deleteMutation.mutate(inspectDoc); }}
-              disabled={deleteMutation.isPending}
-              className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 disabled:opacity-50 flex items-center gap-1.5 transition-colors"
-            >
-              <Trash2 className="w-4 h-4" /> Delete Document
-            </button>
-            <button onClick={() => setInspectDoc(null)} className="ml-1 w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200 text-slate-400 hover:text-slate-600 text-lg transition-colors">
-              X
-            </button>
-          </div>
-        </div>
-
-        {/* Two-panel body */}
-        <div className="flex flex-1 overflow-hidden">
-
-          {/* Left: page list */}
-          <div className="w-72 shrink-0 border-r border-slate-200 overflow-y-auto bg-slate-50">
-            <div className="px-3 py-2 border-b border-slate-200 sticky top-0 bg-slate-100 z-10">
-              <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">All Pages</p>
-            </div>
-            {allPages.map((pageEntry) => {
-              const clin = pageEntry.is_clinical || pageEntry.restored;
-              const isActive = pageEntry.page === inspectPage;
-              return (
-                <button
-                  key={pageEntry.page}
-                  ref={(el) => { if (el && isActive) el.scrollIntoView({ block: "nearest", behavior: "smooth" }); }}
-                  onClick={() => setInspectPage(pageEntry.page)}
-                  className={`w-full text-left px-4 py-3 border-b border-slate-100 flex items-start gap-3 transition-colors ${
-                    isActive ? "bg-blue-50 border-l-4 border-l-blue-500" : "hover:bg-white"
-                  }`}
-                >
-                  <div className={`mt-1 w-2.5 h-2.5 rounded-full shrink-0 ${clin ? "bg-green-500" : "bg-red-500"}`} />
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-slate-800">Page {pageEntry.page}</p>
-                    {pageEntry.reason && (
-                      <p className="text-xs text-slate-500 italic">{pageEntry.reason}</p>
-                    )}
-                    {pageEntry.restored && (
-                      <p className="text-xs text-blue-500">Restored</p>
-                    )}
-                  </div>
-                  {!clin && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); restorePage(docId, pageEntry.page); }}
-                      disabled={isRestoring}
-                      className="shrink-0 text-xs px-2 py-0.5 bg-slate-200 hover:bg-blue-100 hover:text-blue-700 rounded transition-colors disabled:opacity-50"
-                    >
-                      Restore
-                    </button>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Right: PDF viewer */}
-          <div
-            className="flex-1 flex flex-col overflow-hidden outline-none"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === "ArrowRight" || e.key === "ArrowDown") {
-                e.preventDefault();
-                setInspectPage((p) => Math.min(totalPages, p + 1));
-              } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
-                e.preventDefault();
-                setInspectPage((p) => Math.max(1, p - 1));
-              }
-            }}
-          >
-            <div className="flex items-center justify-between px-4 py-2 border-b border-slate-200 bg-white shrink-0">
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setInspectPage((p) => Math.max(1, p - 1))}
-                  disabled={inspectPage <= 1}
-                  className="p-1.5 rounded hover:bg-slate-100 disabled:opacity-40 transition-colors"
-                >
-                  <ChevronUp className="w-4 h-4 text-slate-600" />
-                </button>
-                <span className="text-sm text-slate-700 font-medium px-2">
-                  Page {inspectPage} of {totalPages}
-                </span>
-                <button
-                  onClick={() => setInspectPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={inspectPage >= totalPages}
-                  className="p-1.5 rounded hover:bg-slate-100 disabled:opacity-40 transition-colors"
-                >
-                  <ChevronDown className="w-4 h-4 text-slate-600" />
-                </button>
-              </div>
-              <div className={`flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full ${isClinical ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>
-                {isClinical ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
-                {isClinical ? "Clinical" : "Non-clinical"}
-              </div>
-            </div>
-            <div
-              className="flex-1 overflow-auto p-6 bg-slate-200 flex justify-center"
-              onWheel={(e) => {
-                // Scroll down -> next page, scroll up -> prev page
-                // Only trigger when the canvas itself is not being scrolled (small docs)
-                if (e.deltaY > 40) {
-                  setInspectPage((p) => Math.min(totalPages, p + 1));
-                } else if (e.deltaY < -40) {
-                  setInspectPage((p) => Math.max(1, p - 1));
-                }
-              }}
-            >
-              {partId && (
-                <ModalPdfViewer
-                  partId={partId}
-                  localPageNum={localPageNum}
-                  scale={1.4}
-                  idToken={idToken}
-                />
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-});
 
 export default function Library({ onNavigate, idToken }: { onNavigate?: (page: string) => void; idToken?: string }) {
   const queryClient = useQueryClient();
@@ -535,16 +239,6 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
   const [selectedDuplicateIds, setSelectedDuplicateIds] = useState(new Set());
   const [reassessingDocuments, setReassessingDocuments] = useState(false);
   const [now, setNow] = useState(Date.now());
-
-  const [classifyingIds, setClassifyingIds] = useState(new Set());
-  const [pageClassifications, setPageClassifications] = useState({});
-  const [inspectDoc, setInspectDoc] = useState(null);
-  const [inspectPage, setInspectPage] = useState(1);
-  const [restoringIds, setRestoringIds] = useState(new Set());
-  // v44: classifiedRef is empty on each mount -- only tracks what was processed THIS session.
-  // _classifiedSessionIds (localStorage) is checked separately to decide if re-classify is needed.
-  const classifiedRef = useRef(new Set());
-  const forceReclassifyRef = useRef(new Set());
 
   // --- Data fetch -----------------------------------------------------------
   const { data: documents = [], isLoading, error } = useQuery({
@@ -636,223 +330,16 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
     return `${mins} min`;
   };
 
-  // --- v24: Client-side PDF classification ----------------------------------
-  // v24 change: passes page_offset per part so low_relevance_pages are numbered
   // relative to the full document across all parts.
   // Part 1 (pages 1-100): page_offset=0
   // Part 2 (pages 1-49):  page_offset=100 -> saved as pages 101-149
 
-  const classifyDocumentPages = useCallback((doc) => {
-    const docId = doc.id;
-    if (classifiedRef.current.has(docId)) return;
-    classifiedRef.current.add(docId); // mark immediately so useEffect doesn't double-enqueue
-
-    return enqueueClassify(async () => {
-    const parts: any[] = doc._is_group ? (doc._parts || []) : [doc];
-    if (!forceReclassifyRef.current.has(docId)) {
-      const allAssessed = parts.filter((p) => p.relevance_assessed === true);
-      if (allAssessed.length === parts.length) {
-        // lrp page_number values are GLOBAL (backend applies offset before saving)
-        // so we must compute each part's global start offset to match correctly
-        const sortedParts: any[] = Array.from(parts).sort((a: any, b: any) => (a.part_index ?? 0) - (b.part_index ?? 0));
-        let gOffset = 0;
-        const partOffsets: any = {};
-        for (const sp of sortedParts) { partOffsets[sp.id] = gOffset; gOffset += sp.page_count || 0; }
-        const allSaved = parts.flatMap((p) => {
-          // v40: prefer saved page_classifications (includes restored state) over rebuilding from low_relevance_pages
-          if (p.page_classifications && p.page_classifications.length > 0) {
-            console.log(`classifyPages [load]: using saved page_classifications for part ${p.id} (${p.page_classifications.length} pages)`);
-            const off = partOffsets[p.id] || 0;
-            return p.page_classifications.map((pc) => ({ ...pc, part_id: p.id }));
-          }
-          console.log(`classifyPages [load]: no saved page_classifications for part ${p.id} -- rebuilding from low_relevance_pages`);
-          const lrp = p.low_relevance_pages || [];
-          const pageCount = p.page_count || 0;
-          if (pageCount === 0) return [];
-          const off = partOffsets[p.id] || 0;
-          const lowSet = new Set(lrp.map((l) => l.page_number));
-          const reasonMap = {};
-          lrp.forEach((l) => { reasonMap[l.page_number] = l.reason || ''; });
-          return Array.from({ length: pageCount }, (_, i) => {
-            const gp = off + i + 1;
-            return { page: gp, part_id: p.id, char_count: lowSet.has(gp) ? 0 : 999,
-                     is_clinical: !lowSet.has(gp), restored: false, reason: reasonMap[gp] || '' };
-          });
-        });
-        setPageClassifications((prev) => ({ ...prev, [docId]: allSaved }));
-        return;
-      }
-    }
-    forceReclassifyRef.current.delete(docId);
-
-    setClassifyingIds((prev) => new Set(Array.from(prev).concat([docId])));
-    try {
-      const allPageResults = [];
-
-      // Project Gamma Phase 1: fire-and-poll classify via async Lambda.
-      // POST /classify/start -> { job_id } -> poll GET /jobs/{job_id} until complete/failed.
-      // classifyJobWorker runs in its own Lambda (600s timeout) -- no API Gateway 504.
-      // page_offset is passed to the backend so low_relevance_pages are globally numbered.
-      let pageOffset = 0;
-      const assessedMap = {}; // part.id -> assess result | null (failed)
-
-      const POLL_INTERVAL_MS = 3000;
-      const POLL_TIMEOUT_MS  = 570000; // 9.5 min -- classifyJobWorker Lambda is 600s
-
-      for (const part of parts) {
-        console.log(`classifyPages: starting async classify for part ${part.id} (${part.file_name}) page_offset=${pageOffset}`);
-        try {
-          // 1. Fire classify job
-          const startRes = await awsProxy(`/documents/${part.id}/classify`, "POST", { page_offset: pageOffset });
-          const jobId = startRes.job_id;
-          if (!jobId) throw new Error("classify/start returned no job_id");
-          console.log(`classifyPages: job started job_id=${jobId} for part ${part.id}`);
-
-          // 2. Poll until complete or failed
-          const deadline = Date.now() + POLL_TIMEOUT_MS;
-          let jobResult = null;
-          while (Date.now() < deadline) {
-            await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-            const jobStatus = await awsProxy(`/jobs/${jobId}`, "GET");
-            console.log(`classifyPages: poll job_id=${jobId} status=${jobStatus.status}`);
-            if (jobStatus.status === "complete") {
-              jobResult = jobStatus.result; // { aws_document_id, is_rejected, low_relevance_pages, page_count, ... }
-              break;
-            }
-            if (jobStatus.status === "failed") {
-              throw new Error(`classify job failed: ${jobStatus.error_message || "unknown"}`);
-            }
-            // still pending/running -- keep polling
-          }
-          if (!jobResult) throw new Error(`classify job timed out after ${POLL_TIMEOUT_MS/1000}s`);
-
-          // 3. Fetch fresh document record from DynamoDB to get full low_relevance_pages
-          // (job result has summary; full data written to documents table by classifyJobWorker)
-          const freshDoc = await awsProxy(`/documents/${part.id}`, "GET");
-          assessedMap[part.id] = {
-            is_relevant_medical_document: !freshDoc.is_rejected,
-            low_relevance_pages: freshDoc.low_relevance_pages || [],
-            page_count: freshDoc.page_count || part.page_count || 1,
-          };
-          console.log(`classifyPages: part ${part.id} complete -- rejected=${freshDoc.is_rejected} low_pages=${(freshDoc.low_relevance_pages||[]).length}`);
-        } catch (err) {
-          console.warn(`classifyPages: classify failed for part ${part.id}:`, err.message);
-          // On error: treat as all-clinical so document remains accessible
-          assessedMap[part.id] = { is_relevant_medical_document: true, low_relevance_pages: [], page_count: part.page_count || 1 };
-        }
-        pageOffset += (part.page_count || 0);
-      }
-
-      // Build page results from polled data (fall back to original part data if timed out)
-      for (const part of parts) {
-        const assessData = assessedMap[part.id] || {};
-        const result = {
-          is_relevant_medical_document: assessData.is_relevant_medical_document !== false,
-          low_relevance_pages: assessData.low_relevance_pages || [],
-          page_count: assessData.page_count || part.page_count || 1,
-        };
-
-        const pageCount = result.page_count || part.page_count || 1;
-        // low_relevance_pages have offset already applied by processWorker (v24)
-        const lowSet = new Set((result.low_relevance_pages || []).map((l) => l.page_number));
-        const reasonMap = {};
-        (result.low_relevance_pages || []).forEach((l) => { reasonMap[l.page_number] = l.reason || ''; });
-
-        // Determine this part's starting page in the full document
-        const sortedParts: any[] = Array.from(parts).sort((a: any, b: any) => (a.part_index ?? 0) - (b.part_index ?? 0));
-        let partStartPage = 1;
-        for (const sp of sortedParts) {
-          if (sp.id === part.id) break;
-          partStartPage += (sp.page_count || 0);
-        }
-
-        for (let p = 1; p <= pageCount; p++) {
-          const globalPage = partStartPage + p - 1;
-          allPageResults.push({
-            page: globalPage,
-            part_id: part.id,
-            char_count: lowSet.has(globalPage) ? 0 : 999,
-            is_clinical: !lowSet.has(globalPage),
-            restored: false,
-            reason: reasonMap[globalPage] || '',
-          });
-        }
-      }
-
-      // v42: persist page_classifications AND relevance_assessed to DynamoDB
-      // -- ensures parts that 504'd during assess still get relevance_assessed=true
-      // -- so allPartsAssessed passes on reload and [useEffect load] fires correctly
-      try {
-        const partsSorted = Array.from(parts).sort((a, b) => (a.part_index ?? 0) - (b.part_index ?? 0));
-        console.log(`classifyPages: persisting page_classifications for ${partsSorted.length} parts (docId=${docId})`);
-        for (const part of partsSorted) {
-          const partSlice = allPageResults.filter((p) => p.part_id === part.id);
-          const timedOut = assessedMap[part.id] === null;
-          if (timedOut) {
-            // 504 -- do NOT write relevance_assessed:true so this part stays retryable
-            console.warn(`classifyPages: skipping persist for timed-out part ${part.id} -- will retry on next classify`);
-          } else {
-            const payload: any = { page_classifications: partSlice };
-            if (!part.relevance_assessed) {
-              payload.relevance_assessed = true;
-              console.log(`classifyPages: part ${part.id} had no server relevance_assessed -- writing true alongside page_classifications`);
-            }
-            if (partSlice.length > 0) {
-              console.log(`classifyPages: PUT page_classifications for part ${part.id} (${partSlice.length} pages)`);
-              const putResult = await awsProxy(`/documents/${part.id}`, "PUT", payload);
-              console.log(`classifyPages: PUT result for part ${part.id}:`, JSON.stringify(putResult));
-            } else {
-              console.warn(`classifyPages: no pages for part ${part.id} -- skipping PUT`);
-            }
-          }
-        }
-        console.log(`classifyPages: persist complete for docId=${docId}`);
-      } catch (saveErr) {
-        console.error(`classifyPages: FAILED to persist page_classifications for ${docId}:`, saveErr.message, saveErr);
-      }
-      // v51: only mark assessed in localStorage if at least one part completed without timeout
-      // if ALL parts 504'd, assessedMap values are all null -- don't persist so retry fires next time
-      const anyCompleted = parts.some((p) => assessedMap[p.id] !== null && assessedMap[p.id] !== undefined);
-      if (anyCompleted) {
-        _persistAssessed(docId);
-        setPageClassifications((prev) => ({ ...prev, [docId]: allPageResults }));
-      } else {
-        console.warn(`classifyPages: all parts timed out for docId=${docId} -- not persisting to localStorage, UI cleared for retry`);
-        _clearAssessed(docId);
-        setPageClassifications((prev) => {
-          const next = { ...prev };
-          delete next[docId];
-          return next;
-        });
-      }
-    } catch (err) {
-      console.error(`classifyPages error for ${docId}:`, err.message);
-      _clearAssessed(docId);
-      classifiedRef.current.delete(docId);
-    } finally {
-      setClassifyingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(docId);
-        return next;
-      });
-      // v43: invalidate query cache so navigation back to Library re-fetches
-      // fresh DynamoDB data (with relevance_assessed + page_classifications)
-      queryClient.invalidateQueries({ queryKey: ["aws-documents"] });
-    }
-    }); // end enqueueClassify
-  }, [queryClient]);
-
-  // Trigger classification for any processed doc not yet classified
   useEffect(() => {
     for (const doc of documents) {
       const parts: any[] = doc._is_group ? (doc._parts || []) : [doc];
       const isProcessed = parts.every((p) => p.status === "processed");
       if (!isProcessed) continue;
-      if (classifiedRef.current.has(doc.id)) continue;
-      // v52: skip load path if a forced reclassify is pending for this doc --
-      // reclassify clears classifiedRef but adds to forceReclassifyRef, so the
       // useEffect must not re-load stale DynamoDB data before the fresh assess fires
-      if (forceReclassifyRef.current.has(doc.id)) continue;
       const allPartsAssessed = (parts as any[]).every((p: any) => p.relevance_assessed === true);
       if (allPartsAssessed) {
         const sortedParts2: any[] = Array.from(parts).sort((a: any, b: any) => (a.part_index ?? 0) - (b.part_index ?? 0));
@@ -860,13 +347,6 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
         const partOff2: any = {};
         for (const sp of sortedParts2) { partOff2[sp.id] = gOff2; gOff2 += sp.page_count || 0; }
         const allSaved = parts.flatMap((p) => {
-          // v40: prefer saved page_classifications from DynamoDB (preserves restored state)
-          if (p.page_classifications && p.page_classifications.length > 0) {
-            console.log(`[useEffect load] using saved page_classifications for part ${p.id} (${p.page_classifications.length} pages)`);
-            return p.page_classifications.map((pc) => ({ ...pc, part_id: p.id }));
-          }
-          console.log(`[useEffect load] no saved page_classifications for part ${p.id} -- rebuilding from low_relevance_pages`);
-          const lrp = p.low_relevance_pages || [];
           const pageCount = p.page_count || 0;
           if (pageCount === 0) return [];
           const off2 = partOff2[p.id] || 0;
@@ -879,67 +359,12 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
                      is_clinical: !lowSet.has(gp2), restored: false, reason: reasonMap2[gp2] || '' };
           });
         });
-        setPageClassifications((prev) => {
-          if (prev[doc.id]) return prev;
-          return { ...prev, [doc.id]: allSaved };
-        });
         _persistAssessed(doc.id);
-        classifiedRef.current.add(doc.id);
       } else {
-        // v26: also skip if pageClassifications already has results (survives state across renders)
-        if (pageClassifications[doc.id]) {
-          _persistAssessed(doc.id);
-          classifiedRef.current.add(doc.id);
-          continue;
-        }
-        classifyDocumentPages(doc);
       }
     }
-  }, [documents, classifyDocumentPages, pageClassifications]);
-
-  // Re-classify: clear DynamoDB flags first, then re-run assess
-  const reclassifyDoc = useCallback(async (doc) => {
-    const docId = doc.id;
-    _clearAssessed(docId);
-    classifiedRef.current.delete(docId);
-    setPageClassifications((prev) => {
-      const next = { ...prev };
-      delete next[docId];
-      return next;
-    });
-    forceReclassifyRef.current.add(docId);
-    // v51: clear relevance_assessed + page_classifications in DynamoDB so stale
-    // data from a previous silent-pass 504 doesn't block the fresh assess call
-    const parts: any[] = doc._is_group ? (doc._parts || []) : [doc];
-    await Promise.all(parts.map((part) =>
-      awsProxy(`/documents/${part.id}`, "PUT", {
-        relevance_assessed: false,
-        page_classifications: [],
-        low_relevance_pages: [],
-      }).catch((e) => console.warn(`reclassifyDoc: failed to clear DynamoDB flags for ${part.id}:`, e.message))
-    ));
-    classifyDocumentPages(doc);
-  }, [classifyDocumentPages]);
-
-  const reclassifyAll = useCallback(async () => {
-    for (const doc of documents) {
-      const parts: any[] = doc._is_group ? (doc._parts || []) : [doc];
-      const isProcessed = parts.every((p) => p.status === "processed");
-      if (!isProcessed) continue;
-      await reclassifyDoc(doc);
-    }
-  }, [documents, reclassifyDoc]);
 
   // --- Non-clinical page count helpers --------------------------------------
-  const getNonClinicalPages = (docId) => {
-    const classifications = pageClassifications[docId] || [];
-    return classifications.filter((p) => !p.is_clinical && !p.restored);
-  };
-
-  const getClinicalPages = (docId) => {
-    const classifications = pageClassifications[docId] || [];
-    return classifications.filter((p) => p.is_clinical || p.restored);
-  };
 
   const getTotalPages = (doc) => {
     const parts: any[] = doc._is_group ? (doc._parts || []) : [doc];
@@ -947,141 +372,6 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
   };
 
   // --- Restore page(s) ------------------------------------------------------
-  const restorePage = useCallback(async (docId, pageNum) => {
-    setRestoringIds((prev) => new Set(Array.from(prev).concat([docId])));
-    try {
-      setPageClassifications((prev) => {
-        const updated = (prev[docId] || []).map((p) =>
-          p.page === pageNum ? { ...p, is_clinical: true, restored: true } : p
-        );
-        return { ...prev, [docId]: updated };
-      });
-      const doc = documents.find((d) => d.id === docId);
-      if (doc) {
-        const parts: any[] = doc._is_group ? (doc._parts || []) : [doc];
-        for (const part of parts) {
-          const partClassifications = (pageClassifications[docId] || []).filter(
-            (p) => p.part_id === part.id
-          );
-          if (partClassifications.some((p) => p.page === pageNum)) {
-            const updated = partClassifications.map((p) =>
-              p.page === pageNum ? { ...p, is_clinical: true, restored: true } : p
-            );
-            await awsProxy(`/documents/${part.id}`, "PUT", { page_classifications: updated });
-            break;
-          }
-        }
-      }
-      toast.success(`Page ${pageNum} restored`);
-    } catch (err) {
-      toast.error("Restore failed: " + err.message);
-    } finally {
-      setRestoringIds((prev) => {
-        const next = new Set(prev);
-        next.delete(docId);
-        return next;
-      });
-    }
-  }, [documents, pageClassifications]);
-
-  const restoreAllPages = useCallback(async (docId) => {
-    setRestoringIds((prev) => new Set(Array.from(prev).concat([docId])));
-    try {
-      setPageClassifications((prev) => {
-        const updated = (prev[docId] || []).map((p) => ({ ...p, is_clinical: true, restored: p.restored || !p.is_clinical }));
-        return { ...prev, [docId]: updated };
-      });
-      const doc = documents.find((d) => d.id === docId);
-      if (doc) {
-        const parts: any[] = doc._is_group ? (doc._parts || []) : [doc];
-        for (const part of parts) {
-          const partClassifications = (pageClassifications[docId] || [])
-            .filter((p) => p.part_id === part.id)
-            .map((p) => ({ ...p, is_clinical: true, restored: p.restored || !p.is_clinical }));
-          if (partClassifications.length > 0) {
-            await awsProxy(`/documents/${part.id}`, "PUT", { page_classifications: partClassifications });
-          }
-        }
-      }
-      toast.success("All pages restored");
-    } catch (err) {
-      toast.error("Restore all failed: " + err.message);
-    } finally {
-      setRestoringIds((prev) => {
-        const next = new Set(prev);
-        next.delete(docId);
-        return next;
-      });
-    }
-  }, [documents, pageClassifications]);
-
-
-  // --- ClassificationBadge: compact card badge -- opens modal on click -------
-  const ClassificationBadge = ({ doc }) => {
-    const docId = doc.id;
-    const isClassifying = classifyingIds.has(docId);
-    const nonClinical = getNonClinicalPages(docId);
-    const totalPages = (pageClassifications[docId] || []).length;
-    const allNonClinical = nonClinical.length > 0 && totalPages > 0 && nonClinical.length === totalPages;
-
-    if (isClassifying) {
-      return (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 flex items-center gap-2 mt-2">
-          <Loader2 className="w-4 h-4 text-blue-600 animate-spin shrink-0" />
-          <span className="text-xs text-blue-700 font-medium">Analyzing pages for clinical content...</span>
-        </div>
-      );
-    }
-    if (totalPages === 0) return null;
-
-    if (nonClinical.length === 0) {
-      return (
-        <button
-          onClick={() => { setInspectDoc(doc); setInspectPage(1); }}
-          className="mt-2 w-full bg-green-50 border border-green-200 rounded-lg px-3 py-2 flex items-center justify-between hover:bg-green-100 transition-colors group"
-        >
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
-            <span className="text-xs text-green-800 font-medium">
-              All {totalPages} page{totalPages !== 1 ? "s" : ""} clinical
-            </span>
-          </div>
-          <Eye className="w-3 h-3 text-green-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-        </button>
-      );
-    }
-
-    return (
-      <div className="mt-2 space-y-1">
-        <button
-          onClick={() => { setInspectDoc(doc); setInspectPage(nonClinical[0]?.page || 1); }}
-          className="w-full rounded-lg px-3 py-2 flex items-center justify-between transition-colors bg-red-50 border border-red-200 hover:bg-red-100 group"
-        >
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 shrink-0 text-red-600" />
-            <span className="text-xs font-medium text-red-800">
-              {allNonClinical
-                ? `All ${nonClinical.length} pages non-clinical`
-                : `${nonClinical.length} page${nonClinical.length !== 1 ? "s" : ""} flagged non-clinical`}
-            </span>
-          </div>
-          <div className="flex items-center gap-1">
-            <span className="text-xs text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">Inspect</span>
-            <Eye className="w-3 h-3 text-red-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-          </div>
-        </button>
-        {nonClinical.length < totalPages && (
-          <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2 flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
-            <span className="text-xs text-green-800 font-medium">
-              {totalPages - nonClinical.length} clinical page{totalPages - nonClinical.length !== 1 ? "s" : ""} included
-            </span>
-          </div>
-        )}
-      </div>
-    );
-  };
-
 
     // --- Mutations ------------------------------------------------------------
   const deleteMutation = useMutation({
@@ -1401,10 +691,6 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
         {documents.length > 0 && (
           <div className="flex gap-2">
             {openFolder && (
-              <Button variant="outline" onClick={reclassifyAll} disabled={classifyingIds.size > 0} className="border-blue-300 text-blue-700 hover:bg-blue-50 disabled:opacity-60">
-                {classifyingIds.size > 0
-                  ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Classifying ({classifyingIds.size} running)</>
-                  : <><RefreshCw className="w-4 h-4 mr-2" />Re-classify All</>}
               </Button>
             )}
             <Button variant="destructive" onClick={() => setDeleteAllDialog(true)} className="bg-red-600 hover:bg-red-700">
@@ -1555,19 +841,12 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
                   const isProcessing = parts.some((p) => p.status === "processing");
                   const isPending = parts.some((p) => p.status === "pending_upload" || p.status === "uploaded");
                   const totalPages = getTotalPages(doc);
-                  const nonClinical = getNonClinicalPages(doc.id);
                   const hasNonClinical = nonClinical.length > 0;
-                  const allNonClinical = pageClassifications[doc.id]?.length > 0 &&
-                    pageClassifications[doc.id].every((p) => !p.is_clinical && !p.restored);
 
                   return (
                     <Card key={doc.id} className={`hover:shadow-lg transition-all duration-300 group ${selectedDocuments.has(doc.id) ? "ring-2 ring-blue-500 bg-blue-50" : ""}`}>
                       <CardContent className="p-6">
                         <div className="space-y-4">
-
-                          {/* Classification panel */}
-                          <ClassificationBadge doc={doc} />
-
 
                           {/* Processing badge */}
                           {isProcessing && (
@@ -1614,11 +893,9 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
                                   <TooltipTrigger asChild>
                                     <Button variant="ghost" size="icon"
                                       className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-blue-500 hover:text-blue-700 hover:bg-blue-50"
-                                      onClick={() => reclassifyDoc(doc)}>
                                       <RefreshCw className="w-4 h-4" />
                                     </Button>
                                   </TooltipTrigger>
-                                  <TooltipContent><p>Re-classify pages</p></TooltipContent>
                                 </Tooltip>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
@@ -1735,17 +1012,8 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
         </div>
       )}
 
-      {/* Classification inspect modal */}
-      <ClassificationModal
-          inspectDoc={inspectDoc}
-          pageClassifications={pageClassifications}
-          inspectPage={inspectPage}
-          restoringIds={restoringIds}
           setInspectDoc={setInspectDoc}
           setInspectPage={setInspectPage}
-          getNonClinicalPages={getNonClinicalPages}
-          restoreAllPages={restoreAllPages}
-          restorePage={restorePage}
           deleteMutation={deleteMutation}
           idToken={idToken}
         />
@@ -1972,4 +1240,3 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
     </div>
   );
 }
-
