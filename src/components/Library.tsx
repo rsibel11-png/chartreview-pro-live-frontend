@@ -541,9 +541,10 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
           assessedMap[part.id] = {
             is_relevant_medical_document: !freshDoc.is_rejected,
             low_relevance_pages: freshDoc.low_relevance_pages || [],
+            page_classifications: freshDoc.page_classifications || [],
             page_count: freshDoc.page_count || part.page_count || 1,
           };
-          console.log(`classifyPages: part ${part.id} complete -- rejected=${freshDoc.is_rejected} low_pages=${(freshDoc.low_relevance_pages||[]).length}`);
+          console.log(`classifyPages: part ${part.id} complete -- rejected=${freshDoc.is_rejected} low_pages=${(freshDoc.low_relevance_pages||[]).length} page_classifications=${(freshDoc.page_classifications||[]).length}`);
         } catch (err) {
           console.warn(`classifyPages: classify failed for part ${part.id}:`, err.message);
           // On error: treat as all-clinical so document remains accessible
@@ -562,29 +563,45 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
         };
 
         const pageCount = result.page_count || part.page_count || 1;
-        // low_relevance_pages have offset already applied by processWorker (v24)
-        const lowSet = new Set((result.low_relevance_pages || []).map((l) => l.page_number));
-        const reasonMap = {};
-        (result.low_relevance_pages || []).forEach((l) => { reasonMap[l.page_number] = l.reason || ''; });
+        // Prefer page_classifications written by VI pre-pass (has accurate per-page clinical/non-clinical)
+        // Fall back to low_relevance_pages for backwards compatibility with old classify results
+        if (result.page_classifications && result.page_classifications.length > 0) {
+          console.log(`classifyPages: using page_classifications for part ${part.id} (${result.page_classifications.length} pages)`);
+          for (const pc of result.page_classifications) {
+            allPageResults.push({
+              page: pc.page,
+              part_id: part.id,
+              char_count: pc.is_clinical ? 999 : 0,
+              is_clinical: pc.is_clinical,
+              restored: false,
+              reason: pc.reason || '',
+            });
+          }
+        } else {
+          // Legacy path: rebuild from low_relevance_pages
+          console.log(`classifyPages: falling back to low_relevance_pages for part ${part.id}`);
+          const lowSet = new Set((result.low_relevance_pages || []).map((l: any) => l.page_number));
+          const reasonMap: Record<number, string> = {};
+          (result.low_relevance_pages || []).forEach((l: any) => { reasonMap[l.page_number] = l.reason || ''; });
 
-        // Determine this part's starting page in the full document
-        const sortedParts: any[] = Array.from(parts).sort((a: any, b: any) => (a.part_index ?? 0) - (b.part_index ?? 0));
-        let partStartPage = 1;
-        for (const sp of sortedParts) {
-          if (sp.id === part.id) break;
-          partStartPage += (sp.page_count || 0);
-        }
+          const sortedParts: any[] = Array.from(parts).sort((a: any, b: any) => (a.part_index ?? 0) - (b.part_index ?? 0));
+          let partStartPage = 1;
+          for (const sp of sortedParts) {
+            if (sp.id === part.id) break;
+            partStartPage += (sp.page_count || 0);
+          }
 
-        for (let p = 1; p <= pageCount; p++) {
-          const globalPage = partStartPage + p - 1;
-          allPageResults.push({
-            page: globalPage,
-            part_id: part.id,
-            char_count: lowSet.has(globalPage) ? 0 : 999,
-            is_clinical: !lowSet.has(globalPage),
-            restored: false,
-            reason: reasonMap[globalPage] || '',
-          });
+          for (let p = 1; p <= pageCount; p++) {
+            const globalPage = partStartPage + p - 1;
+            allPageResults.push({
+              page: globalPage,
+              part_id: part.id,
+              char_count: lowSet.has(globalPage) ? 0 : 999,
+              is_clinical: !lowSet.has(globalPage),
+              restored: false,
+              reason: reasonMap[globalPage] || '',
+            });
+          }
         }
       }
 
