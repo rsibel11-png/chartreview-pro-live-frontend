@@ -502,74 +502,54 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
       // POST /classify/start -> { job_id } -> poll GET /jobs/{job_id} until complete/failed.
       // classifyJobWorker runs in its own Lambda (600s timeout) -- no API Gateway 504.
       // page_offset is passed to the backend so low_relevance_pages are globally numbered.
-      const assessedMap: any = {}; // part.id -> assess result | null (failed)
+      let pageOffset = 0;
+      const assessedMap = {}; // part.id -> assess result | null (failed)
 
       const POLL_INTERVAL_MS = 3000;
       const POLL_TIMEOUT_MS  = 570000; // 9.5 min -- classifyJobWorker Lambda is 600s
 
-      // FULL-DOCUMENT VI PRE-PASS: fire ONE classify job for the entire document
-      // passing all sibling parts so the backend concatenates their extracted_text
-      // and runs a single Bedrock call with full document context.
-      // This matches the original summary-time VI pre-pass behavior.
-      const sortedParts = [...parts].sort((a: any, b: any) => (a.part_index ?? 0) - (b.part_index ?? 0));
-      const anchorPart = sortedParts[0];
-      const siblingParts = sortedParts.map((p: any, idx: number) => ({
-        aws_document_id: p.aws_document_id || p.id,
-        part_index: p.part_index ?? idx,
-        page_count: p.page_count || 1,
-      }));
+      for (const part of parts) {
+        console.log(`classifyPages: starting async classify for part ${part.id} (${part.file_name}) page_offset=${pageOffset}`);
+        try {
+          // 1. Fire classify job
+          const startRes = await awsProxy(`/documents/${part.id}/classify`, "POST", { page_offset: pageOffset });
+          const jobId = startRes.job_id;
+          if (!jobId) throw new Error("classify/start returned no job_id");
+          console.log(`classifyPages: job started job_id=${jobId} for part ${part.id}`);
 
-      console.log(`classifyPages: firing single full-doc classify job for ${parts.length} parts, anchor=${anchorPart.id}`);
-      try {
-        // 1. Fire ONE classify job with all sibling parts
-        const startRes = await awsProxy(
-          `/documents/${anchorPart.id}/classify`,
-          "POST",
-          { page_offset: 0, sibling_parts: siblingParts }
-        );
-        const jobId = startRes.job_id;
-        if (!jobId) throw new Error("classify/start returned no job_id");
-        console.log(`classifyPages: job started job_id=${jobId}`);
+          // 2. Poll until complete or failed
+          const deadline = Date.now() + POLL_TIMEOUT_MS;
+          let jobResult = null;
+          while (Date.now() < deadline) {
+            await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+            const jobStatus = await awsProxy(`/jobs/${jobId}`, "GET");
+            console.log(`classifyPages: poll job_id=${jobId} status=${jobStatus.status}`);
+            if (jobStatus.status === "complete") {
+              jobResult = jobStatus.result; // { aws_document_id, is_rejected, low_relevance_pages, page_count, ... }
+              break;
+            }
+            if (jobStatus.status === "failed") {
+              throw new Error(`classify job failed: ${jobStatus.error_message || "unknown"}`);
+            }
+            // still pending/running -- keep polling
+          }
+          if (!jobResult) throw new Error(`classify job timed out after ${POLL_TIMEOUT_MS/1000}s`);
 
-        // 2. Poll until complete or failed
-        const deadline = Date.now() + POLL_TIMEOUT_MS;
-        let jobResult = null;
-        while (Date.now() < deadline) {
-          await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
-          const jobStatus = await awsProxy(`/jobs/${jobId}`, "GET");
-          console.log(`classifyPages: poll job_id=${jobId} status=${jobStatus.status}`);
-          if (jobStatus.status === "complete") {
-            jobResult = jobStatus.result;
-            break;
-          }
-          if (jobStatus.status === "failed") {
-            throw new Error(`classify job failed: ${jobStatus.error_message || "unknown"}`);
-          }
+          // 3. Fetch fresh document record from DynamoDB to get full low_relevance_pages
+          // (job result has summary; full data written to documents table by classifyJobWorker)
+          const freshDoc = await awsProxy(`/documents/${part.id}`, "GET");
+          assessedMap[part.id] = {
+            is_relevant_medical_document: !freshDoc.is_rejected,
+            low_relevance_pages: freshDoc.low_relevance_pages || [],
+            page_count: freshDoc.page_count || part.page_count || 1,
+          };
+          console.log(`classifyPages: part ${part.id} complete -- rejected=${freshDoc.is_rejected} low_pages=${(freshDoc.low_relevance_pages||[]).length}`);
+        } catch (err) {
+          console.warn(`classifyPages: classify failed for part ${part.id}:`, err.message);
+          // On error: treat as all-clinical so document remains accessible
+          assessedMap[part.id] = { is_relevant_medical_document: true, low_relevance_pages: [], page_count: part.page_count || 1 };
         }
-        if (!jobResult) throw new Error(`classify job timed out after ${POLL_TIMEOUT_MS/1000}s`);
-
-        // 3. Fetch fresh records for ALL parts
-        for (const part of sortedParts) {
-          try {
-            const freshDoc = await awsProxy(`/documents/${(part as any).id}`, "GET");
-            assessedMap[(part as any).id] = {
-              is_relevant_medical_document: !freshDoc.is_rejected,
-              low_relevance_pages: freshDoc.low_relevance_pages || [],
-              page_classifications: (freshDoc as any).page_classifications || [],
-              page_count: freshDoc.page_count || (part as any).page_count || 1,
-            };
-            console.log(`classifyPages: part ${(part as any).id} fetched -- low_pages=${(freshDoc.low_relevance_pages||[]).length} page_classifications=${((freshDoc as any).page_classifications||[]).length}`);
-          } catch (fetchErr: any) {
-            console.warn(`classifyPages: failed to fetch fresh doc for part ${(part as any).id}:`, fetchErr.message);
-            assessedMap[(part as any).id] = { is_relevant_medical_document: true, low_relevance_pages: [], page_count: (part as any).page_count || 1 };
-          }
-        }
-      } catch (err: any) {
-        console.warn(`classifyPages: classify failed:`, err.message);
-        // On error: treat all parts as all-clinical
-        for (const part of sortedParts) {
-          assessedMap[(part as any).id] = { is_relevant_medical_document: true, low_relevance_pages: [], page_count: (part as any).page_count || 1 };
-        }
+        pageOffset += (part.page_count || 0);
       }
 
       // Build page results from polled data (fall back to original part data if timed out)
@@ -582,45 +562,29 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
         };
 
         const pageCount = result.page_count || part.page_count || 1;
-        // Prefer page_classifications written by VI pre-pass (has accurate per-page clinical/non-clinical)
-        // Fall back to low_relevance_pages for backwards compatibility with old classify results
-        if ((result as any).page_classifications && (result as any).page_classifications.length > 0) {
-          console.log(`classifyPages: using page_classifications for part ${part.id} (${(result as any).page_classifications.length} pages)`);
-          for (const pc of (result as any).page_classifications) {
-            allPageResults.push({
-              page: pc.page,
-              part_id: part.id,
-              char_count: pc.is_clinical ? 999 : 0,
-              is_clinical: pc.is_clinical,
-              restored: false,
-              reason: pc.reason || '',
-            });
-          }
-        } else {
-          // Legacy path: rebuild from low_relevance_pages
-          console.log(`classifyPages: falling back to low_relevance_pages for part ${part.id}`);
-          const lowSet = new Set((result.low_relevance_pages || []).map((l: any) => l.page_number));
-          const reasonMap: Record<number, string> = {};
-          (result.low_relevance_pages || []).forEach((l: any) => { reasonMap[l.page_number] = l.reason || ''; });
+        // low_relevance_pages have offset already applied by processWorker (v24)
+        const lowSet = new Set((result.low_relevance_pages || []).map((l) => l.page_number));
+        const reasonMap = {};
+        (result.low_relevance_pages || []).forEach((l) => { reasonMap[l.page_number] = l.reason || ''; });
 
-          const sortedParts: any[] = Array.from(parts).sort((a: any, b: any) => (a.part_index ?? 0) - (b.part_index ?? 0));
-          let partStartPage = 1;
-          for (const sp of sortedParts) {
-            if (sp.id === part.id) break;
-            partStartPage += (sp.page_count || 0);
-          }
+        // Determine this part's starting page in the full document
+        const sortedParts: any[] = Array.from(parts).sort((a: any, b: any) => (a.part_index ?? 0) - (b.part_index ?? 0));
+        let partStartPage = 1;
+        for (const sp of sortedParts) {
+          if (sp.id === part.id) break;
+          partStartPage += (sp.page_count || 0);
+        }
 
-          for (let p = 1; p <= pageCount; p++) {
-            const globalPage = partStartPage + p - 1;
-            allPageResults.push({
-              page: globalPage,
-              part_id: part.id,
-              char_count: lowSet.has(globalPage) ? 0 : 999,
-              is_clinical: !lowSet.has(globalPage),
-              restored: false,
-              reason: reasonMap[globalPage] || '',
-            });
-          }
+        for (let p = 1; p <= pageCount; p++) {
+          const globalPage = partStartPage + p - 1;
+          allPageResults.push({
+            page: globalPage,
+            part_id: part.id,
+            char_count: lowSet.has(globalPage) ? 0 : 999,
+            is_clinical: !lowSet.has(globalPage),
+            restored: false,
+            reason: reasonMap[globalPage] || '',
+          });
         }
       }
 
