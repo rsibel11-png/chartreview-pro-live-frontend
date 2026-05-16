@@ -541,7 +541,7 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
           assessedMap[part.id] = {
             is_relevant_medical_document: !freshDoc.is_rejected,
             low_relevance_pages: freshDoc.low_relevance_pages || [],
-            page_classifications: freshDoc.page_classifications || [],
+            page_classifications: (freshDoc as any).page_classifications || [],
             page_count: freshDoc.page_count || part.page_count || 1,
           };
           console.log(`classifyPages: part ${part.id} complete -- rejected=${freshDoc.is_rejected} low_pages=${(freshDoc.low_relevance_pages||[]).length} page_classifications=${(freshDoc.page_classifications||[]).length}`);
@@ -565,9 +565,9 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
         const pageCount = result.page_count || part.page_count || 1;
         // Prefer page_classifications written by VI pre-pass (has accurate per-page clinical/non-clinical)
         // Fall back to low_relevance_pages for backwards compatibility with old classify results
-        if (result.page_classifications && result.page_classifications.length > 0) {
-          console.log(`classifyPages: using page_classifications for part ${part.id} (${result.page_classifications.length} pages)`);
-          for (const pc of result.page_classifications) {
+        if ((result as any).page_classifications && (result as any).page_classifications.length > 0) {
+          console.log(`classifyPages: using page_classifications for part ${part.id} (${(result as any).page_classifications.length} pages)`);
+          for (const pc of (result as any).page_classifications) {
             allPageResults.push({
               page: pc.page,
               part_id: part.id,
