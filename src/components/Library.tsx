@@ -875,13 +875,6 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
 
                             {/* Badges */}
                             <div className="flex flex-wrap gap-2">
-                                <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
-                                </Badge>
-                              )}
-                                <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
-                                  All non-clinical
-                                </Badge>
-                              )}
                               {doc.folder && (
                                 <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
                                   <Folder className="w-3 h-3 mr-1" />{doc.folder}
@@ -900,10 +893,6 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
                             {totalPages > 0 && (
                               <p className="text-xs text-slate-600">
                                 Pages: <span className="font-medium">{totalPages}</span>
-                                {hasNonClinical && (
-                                  <span className="text-red-600 ml-1">
-                                  </span>
-                                )}
                               </p>
                             )}
                             {doc.patient_name && (
