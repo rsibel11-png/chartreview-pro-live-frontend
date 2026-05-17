@@ -952,8 +952,19 @@ const normalizePTSetting = (setting: string): string => {
       if (visit.lab_findings && (visit.lab_findings as string).trim()) { contentRuns.push(boldRun('Laboratory Findings: ')); contentRuns.push(normalRun(visit.lab_findings + ' ')); }
       sections_content.push(visitPara(dateStr, contentRuns));
       if (visit.impression_diagnosis) {
-        const diagRuns: any[] = [boldRun('Diagnosis: '), normalRun(visit.impression_diagnosis)];
-        if (visit.icd10_codes && (visit.icd10_codes as string[]).length > 0) diagRuns.push(normalRun(` (${(visit.icd10_codes as string[]).join(', ')})`));
+        // Strip any trailing ICD-10 parenthetical already embedded in impression_diagnosis
+        // to avoid double-append and mid-code line-wrap in Word.
+        // e.g. "...routine healing (S52.021D)." → "...routine healing."
+        let diagText: string = visit.impression_diagnosis as string;
+        const hasCodes = visit.icd10_codes && (visit.icd10_codes as string[]).length > 0;
+        if (hasCodes) {
+          // Remove trailing (...) blocks that look like ICD codes — keep clinical text only
+          diagText = diagText.replace(/\s*\([A-Z][0-9][0-9A-Z.]{1,6}[^)]*\)\s*\.?\s*$/g, '').trim();
+          // Also strip a standalone (ICD-10: ...) suffix if present
+          diagText = diagText.replace(/\s*\(ICD-10:[^)]*\)\s*$/gi, '').trim();
+        }
+        const diagRuns: any[] = [boldRun('Diagnosis: '), normalRun(diagText)];
+        if (hasCodes) diagRuns.push(normalRun(` (${(visit.icd10_codes as string[]).join(', ')})`));
         sections_content.push(subPara(diagRuns));
       }
       if (visit.treatment_plan) sections_content.push(subPara([boldRun('Treatment Plan: '), normalRun(visit.treatment_plan)], { after: 120 }));
