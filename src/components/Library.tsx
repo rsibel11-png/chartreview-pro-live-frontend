@@ -890,14 +890,6 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <Button variant="ghost" size="icon"
-                                      className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-blue-500 hover:text-blue-700 hover:bg-blue-50"
-                                      <RefreshCw className="w-4 h-4" />
-                                    </Button>
-                                  </TooltipTrigger>
-                                </Tooltip>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button variant="ghost" size="icon"
                                       className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-slate-600 hover:text-slate-700"
                                       onClick={() => { setEditingFolder(doc); setNewFolderName(doc.folder || ""); }}>
                                       <Edit2 className="w-4 h-4" />
