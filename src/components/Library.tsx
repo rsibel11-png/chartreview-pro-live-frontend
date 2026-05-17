@@ -690,9 +690,7 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
         </div>
         {documents.length > 0 && (
           <div className="flex gap-2">
-            {openFolder && (
-              </Button>
-            )}
+
             <Button variant="destructive" onClick={() => setDeleteAllDialog(true)} className="bg-red-600 hover:bg-red-700">
               <Trash2 className="w-4 h-4 mr-2" />Delete All Documents
             </Button>
