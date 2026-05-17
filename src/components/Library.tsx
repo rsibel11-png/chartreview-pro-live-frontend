@@ -8,7 +8,7 @@
  * - All other logic identical to CRPv5 v54
  */
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import {
@@ -130,14 +130,6 @@ const DialogDescription = ({ children }: any) => <p className="text-sm text-slat
 // ────────────────────────────────────────────────────────────────────────────
 
 // v26: localStorage-backed set -- survives both remounts AND full browser refreshes
-const _persistAssessed = (id: string) => {
-  try {
-  } catch {}
-};
-const _clearAssessed = (id: string) => {
-  try {
-  } catch {}
-};
 
 // calls from pushing each other over API Gateway's 29s timeout on large files.
 // Large PDFs (8MB+) need the full budget. Speed is recovered by the assembly
@@ -334,46 +326,6 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
   // Part 1 (pages 1-100): page_offset=0
   // Part 2 (pages 1-49):  page_offset=100 -> saved as pages 101-149
 
-  useEffect(() => {
-    for (const doc of documents) {
-      const parts: any[] = doc._is_group ? (doc._parts || []) : [doc];
-      const isProcessed = parts.every((p) => p.status === "processed");
-      if (!isProcessed) continue;
-      // useEffect must not re-load stale DynamoDB data before the fresh assess fires
-      const allPartsAssessed = (parts as any[]).every((p: any) => p.relevance_assessed === true);
-      if (allPartsAssessed) {
-        const sortedParts2: any[] = Array.from(parts).sort((a: any, b: any) => (a.part_index ?? 0) - (b.part_index ?? 0));
-        let gOff2 = 0;
-        const partOff2: any = {};
-        for (const sp of sortedParts2) { partOff2[sp.id] = gOff2; gOff2 += sp.page_count || 0; }
-        const allSaved = parts.flatMap((p) => {
-          const pageCount = p.page_count || 0;
-          if (pageCount === 0) return [];
-          const off2 = partOff2[p.id] || 0;
-          const lowSet = new Set(lrp.map((l) => l.page_number));
-          const reasonMap2 = {};
-          lrp.forEach((l) => { reasonMap2[l.page_number] = l.reason || ''; });
-          return Array.from({ length: pageCount }, (_, i) => {
-            const gp2 = off2 + i + 1;
-            return { page: gp2, part_id: p.id, char_count: lowSet.has(gp2) ? 0 : 999,
-                     is_clinical: !lowSet.has(gp2), restored: false, reason: reasonMap2[gp2] || '' };
-          });
-        });
-        _persistAssessed(doc.id);
-      } else {
-      }
-    }
-
-  // --- Non-clinical page count helpers --------------------------------------
-
-  const getTotalPages = (doc) => {
-    const parts: any[] = doc._is_group ? (doc._parts || []) : [doc];
-    return parts.reduce((s, p) => s + (p.page_count || 0), 0);
-  };
-
-  // --- Restore page(s) ------------------------------------------------------
-
-    // --- Mutations ------------------------------------------------------------
   const deleteMutation = useMutation({
     mutationFn: async (doc: any) => {
       if (doc._is_group && doc._part_ids?.length) {
@@ -690,7 +642,6 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
         </div>
         {documents.length > 0 && (
           <div className="flex gap-2">
-
             <Button variant="destructive" onClick={() => setDeleteAllDialog(true)} className="bg-red-600 hover:bg-red-700">
               <Trash2 className="w-4 h-4 mr-2" />Delete All Documents
             </Button>
@@ -839,12 +790,13 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
                   const isProcessing = parts.some((p) => p.status === "processing");
                   const isPending = parts.some((p) => p.status === "pending_upload" || p.status === "uploaded");
                   const totalPages = getTotalPages(doc);
-                  const hasNonClinical = nonClinical.length > 0;
 
                   return (
                     <Card key={doc.id} className={`hover:shadow-lg transition-all duration-300 group ${selectedDocuments.has(doc.id) ? "ring-2 ring-blue-500 bg-blue-50" : ""}`}>
                       <CardContent className="p-6">
                         <div className="space-y-4">
+
+                          {/* Classification panel */}
 
                           {/* Processing badge */}
                           {isProcessing && (
@@ -865,14 +817,8 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
 
                           {/* Icon + actions */}
                           <div className="flex items-start justify-between">
-                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                              allNonClinical || hasNonClinical ? "bg-red-100"
-                              : "bg-cyan-100"
-                            }`}>
-                              <FileText className={`w-6 h-6 ${
-                                allNonClinical || hasNonClinical ? "text-red-500"
-                                : "text-cyan-600"
-                              }`} />
+                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center bg-cyan-100`}>
+                              <FileText className={`w-6 h-6 text-cyan-600`} />
                             </div>
                             <TooltipProvider>
                               <div className="flex gap-2">
@@ -886,6 +832,11 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
                                     </Button>
                                   </TooltipTrigger>
                                   <TooltipContent><p>Open document</p></TooltipContent>
+                                </Tooltip>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                  </TooltipTrigger>
+                                  <TooltipContent><p>Re-classify pages</p></TooltipContent>
                                 </Tooltip>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
@@ -924,12 +875,9 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
 
                             {/* Badges */}
                             <div className="flex flex-wrap gap-2">
-                              {hasNonClinical && !allNonClinical && (
                                 <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
-                                  {nonClinical.length} pages flagged
                                 </Badge>
                               )}
-                              {allNonClinical && (
                                 <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
                                   All non-clinical
                                 </Badge>
@@ -954,7 +902,6 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
                                 Pages: <span className="font-medium">{totalPages}</span>
                                 {hasNonClinical && (
                                   <span className="text-red-600 ml-1">
-                                    ({totalPages - nonClinical.length} clinical, {nonClinical.length} flagged)
                                   </span>
                                 )}
                               </p>
@@ -1002,6 +949,7 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
         </div>
       )}
 
+      {/* Classification inspect modal */}
 
       {/* Delete single */}
       <AlertDialog open={!!deleteDialog} onOpenChange={() => setDeleteDialog(null)}>
@@ -1225,3 +1173,4 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
     </div>
   );
 }
+
