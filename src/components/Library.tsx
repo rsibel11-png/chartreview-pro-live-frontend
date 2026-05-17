@@ -789,7 +789,7 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
                   const parts: any[] = doc._is_group ? (doc._parts || []) : [doc];
                   const isProcessing = parts.some((p) => p.status === "processing");
                   const isPending = parts.some((p) => p.status === "pending_upload" || p.status === "uploaded");
-                  const totalPages = getTotalPages(doc);
+                  const totalPages = (doc._is_group ? (doc._parts || []) : [doc]).reduce((s: number, p: any) => s + (p.page_count || 0), 0);
 
                   return (
                     <Card key={doc.id} className={`hover:shadow-lg transition-all duration-300 group ${selectedDocuments.has(doc.id) ? "ring-2 ring-blue-500 bg-blue-50" : ""}`}>
