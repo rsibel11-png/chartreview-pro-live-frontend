@@ -1002,11 +1002,6 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
         </div>
       )}
 
-          setInspectDoc={setInspectDoc}
-          setInspectPage={setInspectPage}
-          deleteMutation={deleteMutation}
-          idToken={idToken}
-        />
 
       {/* Delete single */}
       <AlertDialog open={!!deleteDialog} onOpenChange={() => setDeleteDialog(null)}>
