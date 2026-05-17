@@ -744,7 +744,18 @@ const normalizePTSetting = (setting: string): string => {
           console.error('Failed to save summary record:', saveErr);
         }
       } else {
-        console.log(`generateSummary: backend already saved summary ${jobResult.aws_summary_id} — skipping frontend POST`);
+        // Backend saved the raw (pre-sanitize/dedup) visits. Update with the clean deduplicated set.
+        console.log(`generateSummary: updating summary ${jobResult.aws_summary_id} with ${cleanVisits.length} clean visits (was ${rawVisits.length} raw)`);
+        genStore.set({ statusMsg: 'Saving clean visits...' });
+        try {
+          await awsProxy(`/summaries/${jobResult.aws_summary_id}`, 'PUT', {
+            visits: cleanVisits,
+            visit_count: cleanVisits.length,
+            status: 'draft',
+          });
+        } catch (updateErr: any) {
+          console.error('Failed to update summary with clean visits:', updateErr);
+        }
       }
 
       clearInterval(timerHandle);
