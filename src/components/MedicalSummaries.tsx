@@ -1032,7 +1032,7 @@ const normalizePTSetting = (setting: string): string => {
     if (!visitIndexData) return;
     try {
       await awsProxy('/summaries/visit-index', 'POST', {
-        patient_name: visitIndexData.patient_name, visits: visitIndexData.visits,
+        patient_name: visitIndexData.patient_name, visits: (visitIndexData.visits || visitIndexData.known_visits || []),
       });
       alert('Visit index saved to Library.');
     } catch (err: any) { alert('Save failed: ' + err.message); }
@@ -1040,7 +1040,7 @@ const normalizePTSetting = (setting: string): string => {
 
   const crossCheckVisitIndex = (summary: any) => {
     if (!visitIndexData || !summary) return;
-    const indexDates = new Set<string>((visitIndexData.visits || []).map((v: any) =>
+    const indexDates = new Set<string>((visitIndexData.visits || visitIndexData.known_visits || []).map((v: any) =>
       (v.date || v.visit_date || '').trim()
     ));
     const summaryDates = new Set<string>((summary.visits || []).map((v: any) =>
@@ -1419,7 +1419,7 @@ const normalizePTSetting = (setting: string): string => {
                 <List className="w-5 h-5 text-blue-600" />
                 Visit Index — {visitIndexData.patient_name || 'Patient'}
               </DialogTitle>
-              <DialogDescription>{visitIndexData.visits.length} encounters found</DialogDescription>
+              <DialogDescription>{(visitIndexData.visits || visitIndexData.known_visits || []).length} encounters found</DialogDescription>
             </DialogHeader>
             <div className="flex flex-wrap items-center gap-2 py-2 border-b">
               <Button size="sm" variant={visitIndexView === 'chrono' ? 'default' : 'outline'}
@@ -1465,7 +1465,7 @@ const normalizePTSetting = (setting: string): string => {
               </div>
             )}
             <div className="space-y-1 max-h-96 overflow-y-auto">
-              {(visitIndexData.visits || []).map((v: any, i: number) => (
+              {(visitIndexData.visits || visitIndexData.known_visits || []).map((v: any, i: number) => (
                 <div key={i} className="flex gap-3 py-1 border-b border-slate-100 text-sm">
                   <span className="font-medium text-slate-700 w-24 shrink-0">{formatVisitDate(v.date || v.visit_date || '')}</span>
                   <span className="text-slate-600">{v.provider || v.rendering_provider || '—'}</span>
