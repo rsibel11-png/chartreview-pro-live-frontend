@@ -561,19 +561,32 @@ const normalizePTSetting = (setting: string): string => {
   };
 
   const backfillC4Providers = (visitList: any[]): any[] => {
+    // Priority order: ED > Office Visit > Surgery/Operative > Consultation > anything else > Radiology (lowest)
+    const providerPriority = (setting: string): number => {
+      const s = setting.toLowerCase();
+      if (/emergency\s*department|urgent\s*care/.test(s)) return 0;
+      if (/office\s*visit|outpatient/.test(s)) return 1;
+      if (/operative\s*report|surgery|surgical/.test(s)) return 2;
+      if (/consult/.test(s)) return 3;
+      if (/radiology|imaging|x-ray|mri|ct\s*scan|ultrasound/.test(s)) return 99;
+      return 5;
+    };
     return visitList.map((v: any) => {
       const setting = (v.practice_setting || '').toLowerCase();
       const isC4 = setting.includes('c-4') || setting.includes('wcb') || setting.includes("workers' compensation");
       if (!isC4 || v.rendering_provider) return v;
-      // Find same-date non-C4 visit to inherit provider
-      const sameDate = visitList.find((other: any) => {
+      // Find all same-date non-C4 visits with a provider, then pick highest priority
+      const candidates = visitList.filter((other: any) => {
         if (other === v) return false;
         const otherSetting = (other.practice_setting || '').toLowerCase();
         const otherIsC4 = otherSetting.includes('c-4') || otherSetting.includes('wcb') || otherSetting.includes("workers' compensation");
         return !otherIsC4 && other.visit_date === v.visit_date && other.rendering_provider;
       });
-      if (sameDate) return { ...v, rendering_provider: sameDate.rendering_provider };
-      return v;
+      if (!candidates.length) return v;
+      candidates.sort((a: any, b: any) =>
+        providerPriority(a.practice_setting || '') - providerPriority(b.practice_setting || '')
+      );
+      return { ...v, rendering_provider: candidates[0].rendering_provider };
     });
   };
 
