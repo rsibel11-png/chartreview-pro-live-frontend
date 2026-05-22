@@ -480,7 +480,24 @@ const normalizePTSetting = (setting: string): string => {
       });
     };
 
-    return enforceOneC4((visits || []).filter((visit: any) => !isExcluded(visit)))
+    const backfillC4Providers = (visitList: any[]): any[] => {
+      return visitList.map((v: any) => {
+        const setting = (v.practice_setting || '').toLowerCase();
+        const isC4 = setting.includes('c-4') || setting.includes('wcb') || setting.includes("workers' compensation");
+        if (!isC4 || v.rendering_provider) return v;
+        // Find same-date non-C4 visit to inherit provider
+        const sameDate = visitList.find((other: any) => {
+          if (other === v) return false;
+          const otherSetting = (other.practice_setting || '').toLowerCase();
+          const otherIsC4 = otherSetting.includes('c-4') || otherSetting.includes('wcb') || otherSetting.includes("workers' compensation");
+          return !otherIsC4 && other.visit_date === v.visit_date && other.rendering_provider;
+        });
+        if (sameDate) return { ...v, rendering_provider: sameDate.rendering_provider };
+        return v;
+      });
+    };
+
+    return backfillC4Providers(enforceOneC4((visits || []).filter((visit: any) => !isExcluded(visit))))
       .map((visit: any) => {
         const clean = { ...stripLabFindings(visit) };
         stringFields.forEach((field: string) => {
@@ -1060,7 +1077,7 @@ const normalizePTSetting = (setting: string): string => {
               ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Building Index...</>
               : <><List className="w-4 h-4 mr-2" />Build Visit Index</>}
           </Button>
-          <Button onClick={() => { setSelectedDocuments([]); setError(null); setShowDialog(true); }}
+          <Button onClick={() => { setSelectedDocuments([]); setError(null); queryClient.invalidateQueries({ queryKey: ["aws-documents"] }); setShowDialog(true); }}
             className="bg-gradient-to-r from-green-600 to-emerald-600">
             <Plus className="w-4 h-4 mr-2" />Generate Summary
           </Button>
