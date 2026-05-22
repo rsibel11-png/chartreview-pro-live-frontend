@@ -480,23 +480,6 @@ const normalizePTSetting = (setting: string): string => {
       });
     };
 
-    const backfillC4Providers = (visitList: any[]): any[] => {
-      return visitList.map((v: any) => {
-        const setting = (v.practice_setting || '').toLowerCase();
-        const isC4 = setting.includes('c-4') || setting.includes('wcb') || setting.includes("workers' compensation");
-        if (!isC4 || v.rendering_provider) return v;
-        // Find same-date non-C4 visit to inherit provider
-        const sameDate = visitList.find((other: any) => {
-          if (other === v) return false;
-          const otherSetting = (other.practice_setting || '').toLowerCase();
-          const otherIsC4 = otherSetting.includes('c-4') || otherSetting.includes('wcb') || otherSetting.includes("workers' compensation");
-          return !otherIsC4 && other.visit_date === v.visit_date && other.rendering_provider;
-        });
-        if (sameDate) return { ...v, rendering_provider: sameDate.rendering_provider };
-        return v;
-      });
-    };
-
     return enforceOneC4((visits || []).filter((visit: any) => !isExcluded(visit)))
       .map((visit: any) => {
         const clean = { ...stripLabFindings(visit) };
@@ -575,6 +558,23 @@ const normalizePTSetting = (setting: string): string => {
     const br = progressionRank[b.symptom_progression] ?? 0;
     if (br > ar) merged.symptom_progression = b.symptom_progression;
     return merged;
+  };
+
+  const backfillC4Providers = (visitList: any[]): any[] => {
+    return visitList.map((v: any) => {
+      const setting = (v.practice_setting || '').toLowerCase();
+      const isC4 = setting.includes('c-4') || setting.includes('wcb') || setting.includes("workers' compensation");
+      if (!isC4 || v.rendering_provider) return v;
+      // Find same-date non-C4 visit to inherit provider
+      const sameDate = visitList.find((other: any) => {
+        if (other === v) return false;
+        const otherSetting = (other.practice_setting || '').toLowerCase();
+        const otherIsC4 = otherSetting.includes('c-4') || otherSetting.includes('wcb') || otherSetting.includes("workers' compensation");
+        return !otherIsC4 && other.visit_date === v.visit_date && other.rendering_provider;
+      });
+      if (sameDate) return { ...v, rendering_provider: sameDate.rendering_provider };
+      return v;
+    });
   };
 
   const deduplicateVisits = (visits: any[]) => {
