@@ -749,7 +749,15 @@ const normalizePTSetting = (setting: string): string => {
           console.error('Failed to save summary record:', saveErr);
         }
       } else {
-        console.log(`generateSummary: backend already saved summary ${jobResult.aws_summary_id} — skipping frontend POST`);
+        console.log(`generateSummary: backend already saved summary ${jobResult.aws_summary_id} — patching visit_count`);
+        try {
+          await awsProxy(`/summaries/${jobResult.aws_summary_id}`, 'PUT', {
+            visit_count: cleanVisits.length,
+            visits: cleanVisits,
+          });
+        } catch (patchErr: any) {
+          console.error('Failed to patch visit_count:', patchErr);
+        }
       }
 
       clearInterval(timerHandle);
