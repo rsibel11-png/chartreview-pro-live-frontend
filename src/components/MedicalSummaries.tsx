@@ -497,7 +497,7 @@ const normalizePTSetting = (setting: string): string => {
       });
     };
 
-    return backfillC4Providers(enforceOneC4((visits || []).filter((visit: any) => !isExcluded(visit))))
+    return enforceOneC4((visits || []).filter((visit: any) => !isExcluded(visit)))
       .map((visit: any) => {
         const clean = { ...stripLabFindings(visit) };
         stringFields.forEach((field: string) => {
@@ -592,7 +592,10 @@ const normalizePTSetting = (setting: string): string => {
       }
       const setting = (visit.practice_setting || '').toLowerCase();
       const isOpReport = /operative report|surgical report|operation report/i.test(setting);
-      const key = isOpReport ? `${dateKey}|${providerKey}|__op__` : `${dateKey}|${providerKey}`;
+      const isC4Entry = /c-4|wcb|workers' compensation report/i.test(setting);
+      const key = isOpReport ? `${dateKey}|${providerKey}|__op__`
+                : isC4Entry  ? `${dateKey}|${providerKey}|__c4__`
+                :               `${dateKey}|${providerKey}`;
       if (!groups.has(key)) { groups.set(key, []); order.push(key); }
       groups.get(key)!.push(visit);
     }
@@ -726,7 +729,7 @@ const normalizePTSetting = (setting: string): string => {
       const sanitizedVisits: any[] = sanitizeVisits(rawVisits, patientName);
       // Auto-dedup: merge visits with same date+provider immediately after sanitize
       // Updated: 2026-05-13 — run merge-dedup automatically so output is clean without manual button press
-      const cleanVisits: any[] = deduplicateVisits(sanitizedVisits);
+      const cleanVisits: any[] = backfillC4Providers(deduplicateVisits(sanitizedVisits));
       console.log(`generateSummary: ${rawVisits.length} raw -> ${sanitizedVisits.length} after sanitize -> ${cleanVisits.length} after dedup`);
 
       // Backend coordinator already saved the summary record (with case_number, polishing status).
@@ -819,7 +822,7 @@ const normalizePTSetting = (setting: string): string => {
     // Updated: 2026-05-13 — sanitize at export time so old saved records also get cleaned
     const patientNameForSanitize: string = (freshSummary.patient_name || '') as string;
     const sanitizedForExport: any[] = sanitizeVisits(sorted, patientNameForSanitize);
-    const finalVisits = buildVisitList(deduplicateVisits(sanitizedForExport), false); // PT consolidation disabled — show all visits
+    const finalVisits = buildVisitList(backfillC4Providers(deduplicateVisits(sanitizedForExport)), false); // PT consolidation disabled — show all visits
     const patientName = (freshSummary.patient_name || 'Patient') as string;
     const caseNumber  = (freshSummary.case_number  || '')         as string;
 
@@ -1037,7 +1040,7 @@ const normalizePTSetting = (setting: string): string => {
     const selected = summaries.filter((s: any) => selectedSummariesToCombine.includes(s.aws_summary_id || s.id));
     const allVisits: any[] = [];
     for (const s of selected) allVisits.push(...(s.visits || []));
-    const deduped = deduplicateVisits(allVisits);
+    const deduped = backfillC4Providers(deduplicateVisits(allVisits));
     try {
       await awsProxy('/summaries', 'POST', {
         patient_name: selected[0].patient_name || 'Combined Patient',
