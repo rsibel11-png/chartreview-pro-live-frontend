@@ -754,7 +754,7 @@ const normalizePTSetting = (setting: string): string => {
       queryClient.invalidateQueries({ queryKey: ["aws-summaries"] });
       genStore.set({
         running: false, statusMsg: "",
-        completionMsg: `✓ Generated ${rawVisits.length} visits for ${patientName || 'patient'} in ${Math.floor(elapsed / 60)}m ${elapsed % 60}s`,
+        completionMsg: `✓ Generated ${cleanVisits.length} visits for ${patientName || 'patient'} in ${Math.floor(elapsed / 60)}m ${elapsed % 60}s`,
       });
     } catch (err: any) {
       clearInterval(genStore.state.timerHandle);
