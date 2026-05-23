@@ -1006,7 +1006,7 @@ const normalizePTSetting = (setting: string): string => {
         const buffer = await Packer.toBlob(docWithLetterhead);
         const dlUrl = URL.createObjectURL(buffer);
         const lin = document.createElement('a');
-        lin.href = dlUrl; lin.download = filename;
+        lin.href = dlUrl; lin.download = `Medical_Summary_${patientName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.docx`;
         document.body.appendChild(lin); lin.click();
         setTimeout(() => { document.body.removeChild(lin); URL.revokeObjectURL(dlUrl); }, 1000);
         return;
