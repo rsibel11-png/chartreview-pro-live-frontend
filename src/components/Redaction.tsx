@@ -1,51 +1,183 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+/* eslint-disable @typescript-eslint/no-unused-vars */
+// Redaction.tsx — chartreview-native-frontend
+// Standalone PII auto-redaction page. Mirrors MedicalSummaries doc-picker pattern.
+// No changes to Library.tsx. Redacted copy saved back to DynamoDB with is_redacted: true.
 
-// ─── AWS proxy (same pattern as rest of native app) ───────────────────────────
+import React, { useState, useEffect, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
+
+// ── Env vars ──────────────────────────────────────────────────────────────────
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || 'https://1h4kpspbs6.execute-api.us-east-1.amazonaws.com/prod';
-const AWS_API_KEY = process.env.REACT_APP_AWS_API_KEY || 'ChartReview#2026$ProdKey!Rx';
+const ORG_ID      = process.env.REACT_APP_ORG_ID      || '69ceb1ab037acdd4467b31c3';
 
-function getFreshToken(): string | null {
+// ── Auth ──────────────────────────────────────────────────────────────────────
+function getFreshToken(): string {
   try {
     for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i) || '';
-      if (key.includes('CognitoIdentityServiceProvider') && key.endsWith('.idToken')) {
-        return localStorage.getItem(key);
+      const k = localStorage.key(i) || '';
+      if (k.includes('CognitoIdentityServiceProvider') && k.endsWith('.idToken')) {
+        return localStorage.getItem(k) || '';
       }
     }
   } catch { }
-  return null;
+  return '';
 }
 
-async function awsProxy(path: string, method = 'GET', body?: any) {
-  const token = getFreshToken();
-  const headers: any = {
-    'Content-Type': 'application/json',
-    'x-api-key': AWS_API_KEY,
-  };
-  if (token) headers['Authorization'] = `Bearer ${token}`;
-  const resp = await fetch(`${AWS_API_URL}${path}`, {
+async function awsProxy(path: string, method = 'GET', data?: any): Promise<any> {
+  const opts: any = {
     method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!resp.ok) {
-    const txt = await resp.text();
-    throw new Error(`${resp.status}: ${txt}`);
-  }
-  return resp.json();
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${getFreshToken()}`,
+      'x-org-id': ORG_ID,
+    },
+  };
+  if (data) opts.body = JSON.stringify(data);
+  const res = await fetch(`${AWS_API_URL}${path}`, opts);
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || `${method} ${path} failed: ${res.status}`);
+  return json;
 }
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-interface Doc {
+// ── Inlined UI primitives (same as MedicalSummaries) ─────────────────────────
+function Button({ children, onClick, disabled, className = '', variant = 'default', size = 'default', title }: {
+  children: React.ReactNode; onClick?: () => void; disabled?: boolean;
+  className?: string; variant?: string; size?: string; title?: string;
+}) {
+  const base = 'inline-flex items-center justify-center rounded-md font-medium transition-colors focus:outline-none disabled:opacity-50 disabled:pointer-events-none';
+  const variants: any = {
+    default:     'bg-blue-600 text-white hover:bg-blue-700',
+    outline:     'border border-slate-300 bg-white text-slate-700 hover:bg-slate-50',
+    ghost:       'bg-transparent hover:bg-slate-100 text-slate-700',
+    destructive: 'bg-red-600 text-white hover:bg-red-700',
+    dark:        'bg-slate-800 text-white hover:bg-slate-700',
+  };
+  const sizes: any = { default: 'px-4 py-2 text-sm', sm: 'px-3 py-1.5 text-xs', icon: 'p-1.5' };
+  return (
+    <button title={title} onClick={onClick} disabled={disabled}
+      className={`${base} ${variants[variant] || variants.default} ${sizes[size] || sizes.default} ${className}`}>
+      {children}
+    </button>
+  );
+}
+
+function Badge({ children, className = '', variant = 'default' }: {
+  children: React.ReactNode; className?: string; variant?: string;
+}) {
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${
+      variant === 'outline' ? 'bg-white border-slate-300 text-slate-700' : 'bg-slate-100 border-transparent text-slate-700'
+    } ${className}`}>{children}</span>
+  );
+}
+
+function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return <div className={`bg-white rounded-xl border border-slate-200 shadow-sm ${className}`}>{children}</div>;
+}
+function CardHeader({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return <div className={`px-6 py-4 border-b border-slate-100 ${className}`}>{children}</div>;
+}
+function CardContent({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return <div className={`p-6 ${className}`}>{children}</div>;
+}
+
+function Dialog({ open, onOpenChange, children }: { open: boolean; onOpenChange: (v: boolean) => void; children: React.ReactNode }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/40" onClick={() => onOpenChange(false)} />
+      <div className="relative z-10 bg-white rounded-xl shadow-xl w-full mx-4 max-w-3xl">
+        {children}
+      </div>
+    </div>
+  );
+}
+function DialogContent({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return <div className={`p-6 overflow-y-auto ${className}`} style={{ maxHeight: '85vh' }}>{children}</div>;
+}
+function DialogHeader({ children }: { children: React.ReactNode }) {
+  return <div className="mb-4">{children}</div>;
+}
+function DialogFooter({ children }: { children: React.ReactNode }) {
+  return <div className="flex justify-end gap-2 pt-4 border-t border-slate-100 mt-4">{children}</div>;
+}
+function DialogTitle({ children }: { children: React.ReactNode }) {
+  return <h2 className="text-lg font-semibold text-slate-900">{children}</h2>;
+}
+function DialogDescription({ children }: { children: React.ReactNode }) {
+  return <p className="text-sm text-slate-500 mt-1">{children}</p>;
+}
+
+function Checkbox({ checked, onCheckedChange }: {
+  checked: boolean; onCheckedChange?: (v: boolean) => void;
+}) {
+  return (
+    <input type="checkbox" checked={checked} readOnly
+      onChange={() => onCheckedChange?.(!checked)}
+      className="w-4 h-4 rounded accent-blue-600 cursor-pointer"
+    />
+  );
+}
+
+// ── Icons ─────────────────────────────────────────────────────────────────────
+const ShieldOff = ({ className = '' }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M20.618 5.984A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016zM3 3l18 18" />
+  </svg>
+);
+const Folder = ({ className = '' }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+  </svg>
+);
+const FileIcon = ({ className = '' }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+  </svg>
+);
+const CheckSquare = ({ className = '' }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
+  </svg>
+);
+const Square = ({ className = '' }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <rect x="3" y="3" width="18" height="18" rx="2" strokeWidth={2} />
+  </svg>
+);
+const Loader = ({ className = '' }) => (
+  <svg className={`animate-spin ${className}`} fill="none" viewBox="0 0 24 24">
+    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+  </svg>
+);
+const Download = ({ className = '' }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+  </svg>
+);
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+interface DocItem {
+  id: string;
   aws_document_id: string;
-  original_filename: string;
-  patient_id: string;
-  status: string;
+  original_filename?: string;
+  title?: string;
+  file_name?: string;
+  folder_name?: string;
+  provider_name?: string;
+  status?: string;
   is_redacted?: boolean;
+  original_document_id?: string | null;
   created_at?: string;
 }
 
-interface Job {
+interface RedactionJob {
   job_id: string;
   status: 'processing' | 'complete' | 'error';
   progress_message: string;
@@ -53,222 +185,382 @@ interface Job {
     new_doc_id: string;
     download_url: string;
     redaction_count: number;
+    redacted_pages?: number;
   };
 }
 
-// ─── Component ────────────────────────────────────────────────────────────────
+// ── Main component ────────────────────────────────────────────────────────────
 interface RedactionProps {
-  patientId?: string;
   onNavigate?: (page: string, params?: any) => void;
+  idToken?: string;
+  isFreeUser?: boolean;
 }
 
-const Redaction: React.FC<RedactionProps> = ({ patientId, onNavigate }) => {
-  const [docs, setDocs]             = useState<Doc[]>([]);
-  const [loading, setLoading]       = useState(false);
-  const [search, setSearch]         = useState('');
-  const [activeJob, setActiveJob]   = useState<{ docId: string; jobId: string } | null>(null);
-  const [jobStatus, setJobStatus]   = useState<Job | null>(null);
-  const [completedJobs, setCompletedJobs] = useState<Record<string, Job>>({});
+const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
+
+  // ── State ────────────────────────────────────────────────────────────────
+  const [showDialog, setShowDialog]               = useState(false);
+  const [selectedDocs, setSelectedDocs]           = useState<string[]>([]);
+  const [running, setRunning]                     = useState(false);
+  const [statusMsg, setStatusMsg]                 = useState('');
+  const [completedJobs, setCompletedJobs]         = useState<RedactionJob[]>([]);
+  const [error, setError]                         = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ─── Load docs ──────────────────────────────────────────────────────────────
-  const loadDocs = useCallback(async () => {
-    setLoading(true);
-    try {
-      const path = patientId
-        ? `/patients/${patientId}/documents`
-        : '/documents';
-      const data = await awsProxy(path);
-      const items: Doc[] = (data.documents || data.items || data || [])
-        .filter((d: Doc) => d.status === 'processed' && !d.is_redacted);
-      items.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
-      setDocs(items);
-    } catch (err: any) {
-      console.error('Failed to load documents:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [patientId]);
+  // ── Fetch all docs ───────────────────────────────────────────────────────
+  const { data: documents = [], isLoading: docsLoading } = useQuery({
+    queryKey: ['aws-documents-for-redaction'],
+    queryFn: async () => {
+      const res = await fetch(`${AWS_API_URL}/documents`, {
+        headers: { 'Authorization': `Bearer ${getFreshToken()}`, 'x-org-id': ORG_ID },
+      });
+      if (!res.ok) throw new Error('Failed to fetch documents');
+      const data = await res.json();
+      const list: any[] = Array.isArray(data) ? data
+        : Array.isArray(data?.items) ? data.items
+        : Array.isArray(data?.documents) ? data.documents : [];
+      return list
+        .filter((d: any) => d.status === 'processed' && !d.is_redacted
+          && !(d.original_document_id === null && d.status === 'pending_upload'))
+        .map((d: any) => ({ ...d, id: d.aws_document_id || d.id }));
+    },
+    staleTime: 30000,
+  });
 
-  useEffect(() => { loadDocs(); }, [loadDocs]);
+  // ── Group docs by folder (same as MedicalSummaries) ─────────────────────
+  const documentsByFolder: Record<string, DocItem[]> = (documents as DocItem[]).reduce(
+    (acc: Record<string, DocItem[]>, doc: DocItem) => {
+      const folder = doc.folder_name || 'Unfiled';
+      if (!acc[folder]) acc[folder] = [];
+      acc[folder].push(doc);
+      return acc;
+    }, {}
+  );
 
-  // ─── Poll job status ─────────────────────────────────────────────────────────
-  const pollJob = useCallback(async (jobId: string, docId: string) => {
+  const getDocLabel = (doc: DocItem) =>
+    doc.title || doc.original_filename || doc.file_name || doc.aws_document_id;
+
+  // ── Poll job ─────────────────────────────────────────────────────────────
+  const pollJob = async (jobId: string) => {
     try {
-      const data = await awsProxy(`/jobs/${jobId}`);
-      setJobStatus(data);
+      const data: RedactionJob = await awsProxy(`/jobs/${jobId}`);
+      setStatusMsg(data.progress_message || '');
       if (data.status === 'complete' || data.status === 'error') {
-        setCompletedJobs(prev => ({ ...prev, [docId]: data }));
-        setActiveJob(null);
+        setRunning(false);
+        setCompletedJobs(prev => [data, ...prev]);
+        if (data.status === 'error') setError(data.progress_message);
         if (pollRef.current) clearTimeout(pollRef.current);
-        if (data.status === 'complete') loadDocs();
       } else {
-        pollRef.current = setTimeout(() => pollJob(jobId, docId), 3000);
+        pollRef.current = setTimeout(() => pollJob(jobId), 3000);
       }
-    } catch (err) {
-      console.error('Poll error:', err);
-      pollRef.current = setTimeout(() => pollJob(jobId, docId), 5000);
+    } catch (err: any) {
+      pollRef.current = setTimeout(() => pollJob(jobId), 5000);
     }
-  }, [loadDocs]);
+  };
 
   useEffect(() => () => { if (pollRef.current) clearTimeout(pollRef.current); }, []);
 
-  // ─── Start redaction ─────────────────────────────────────────────────────────
-  const startRedaction = async (doc: Doc) => {
-    if (activeJob) return;
-    setActiveJob({ docId: doc.aws_document_id, jobId: '' });
-    setJobStatus(null);
-    try {
-      const data = await awsProxy(`/documents/${doc.aws_document_id}/redact`, 'POST');
-      const jobId = data.job_id;
-      setActiveJob({ docId: doc.aws_document_id, jobId });
-      pollRef.current = setTimeout(() => pollJob(jobId, doc.aws_document_id), 2000);
-    } catch (err: any) {
-      setActiveJob(null);
-      alert('Failed to start redaction: ' + err.message);
+  // ── Start redaction ──────────────────────────────────────────────────────
+  const handleRedact = async () => {
+    if (!selectedDocs.length || running) return;
+    setShowDialog(false);
+    setRunning(true);
+    setError(null);
+    setStatusMsg('Starting redaction…');
+
+    // Redact each selected doc sequentially (could be parallelized later)
+    for (const docId of selectedDocs) {
+      try {
+        setStatusMsg(`Starting redaction for document…`);
+        const data = await awsProxy(`/documents/${docId}/redact`, 'POST');
+        if (data.job_id) {
+          await new Promise<void>((resolve) => {
+            const poll = async () => {
+              try {
+                const job: RedactionJob = await awsProxy(`/jobs/${data.job_id}`);
+                setStatusMsg(job.progress_message || '');
+                if (job.status === 'complete' || job.status === 'error') {
+                  setCompletedJobs(prev => [job, ...prev]);
+                  if (job.status === 'error') setError(job.progress_message);
+                  resolve();
+                } else {
+                  pollRef.current = setTimeout(poll, 3000);
+                }
+              } catch { pollRef.current = setTimeout(poll, 5000); }
+            };
+            pollRef.current = setTimeout(poll, 2000);
+          });
+        }
+      } catch (err: any) {
+        setError(`Failed to redact document: ${err.message}`);
+      }
+    }
+
+    setRunning(false);
+    setSelectedDocs([]);
+    setStatusMsg('');
+  };
+
+  // ── Folder selection helpers ─────────────────────────────────────────────
+  const toggleDoc = (id: string) => {
+    setSelectedDocs(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const toggleFolder = (folderDocs: DocItem[]) => {
+    const ids = folderDocs.map(d => d.id);
+    const allSelected = ids.every(id => selectedDocs.includes(id));
+    if (allSelected) {
+      setSelectedDocs(prev => prev.filter(id => !ids.includes(id)));
+    } else {
+      setSelectedDocs(prev => Array.from(new Set([...prev, ...ids])));
     }
   };
 
-  // ─── Filtered docs ───────────────────────────────────────────────────────────
-  const filtered = docs.filter(d =>
-    !search || d.original_filename?.toLowerCase().includes(search.toLowerCase())
-  );
+  const selectAll = () => {
+    const allIds = (documents as DocItem[]).map(d => d.id);
+    setSelectedDocs(allIds);
+  };
 
-  // ─── Render ──────────────────────────────────────────────────────────────────
+  const clearAll = () => setSelectedDocs([]);
+
+  // ── Render ───────────────────────────────────────────────────────────────
+  const successJobs = completedJobs.filter(j => j.status === 'complete');
+  const failedJobs  = completedJobs.filter(j => j.status === 'error');
+
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      {/* Header */}
-      <div className="mb-6">
-        <div className="flex items-center gap-3 mb-1">
-          <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-xl">
-            🕵️
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 p-6">
+
+      {/* ── Page header ── */}
+      <div className="mb-8 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 bg-slate-800 rounded-xl flex items-center justify-center shadow-md">
+            <ShieldOff className="w-6 h-6 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Document Redaction</h1>
-            <p className="text-sm text-gray-500">
-              Automatically detect and black out patient PII — names, SSN, DOB, insurance IDs, photos and more.
+            <h1 className="text-2xl font-bold text-slate-900">Document Redaction</h1>
+            <p className="text-sm text-slate-500 mt-0.5">
+              Automatically detect and black out patient PII — names, SSN, DOB, insurance IDs, photos, signatures
             </p>
           </div>
         </div>
+        <Button
+          variant="dark"
+          onClick={() => { setShowDialog(true); setError(null); }}
+          disabled={running}
+          className="gap-2 shadow-sm"
+        >
+          <ShieldOff className="w-4 h-4" />
+          Redact Document
+        </Button>
       </div>
 
-      {/* Active job banner */}
-      {activeJob && jobStatus && (
-        <div className="mb-5 rounded-xl bg-blue-50 border border-blue-200 p-4 flex items-start gap-3">
-          <div className="mt-0.5">
-            <svg className="animate-spin h-5 w-5 text-blue-500" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-            </svg>
-          </div>
+      {/* ── Running banner ── */}
+      {running && (
+        <div className="mb-6 rounded-xl bg-blue-50 border border-blue-200 p-4 flex items-center gap-3">
+          <Loader className="w-5 h-5 text-blue-500 shrink-0" />
           <div>
-            <p className="font-medium text-blue-800 text-sm">Redaction in progress</p>
-            <p className="text-blue-600 text-sm mt-0.5">{jobStatus.progress_message}</p>
+            <p className="font-semibold text-blue-800 text-sm">Redaction in progress</p>
+            <p className="text-blue-600 text-sm mt-0.5">{statusMsg}</p>
           </div>
         </div>
       )}
 
-      {/* Completed job result */}
-      {Object.values(completedJobs).map((job) =>
-        job.status === 'complete' && job.result ? (
-          <div key={job.job_id} className="mb-5 rounded-xl bg-green-50 border border-green-200 p-4 flex items-start justify-between gap-3">
-            <div className="flex items-start gap-3">
-              <span className="text-green-500 text-lg mt-0.5">✓</span>
-              <div>
-                <p className="font-medium text-green-800 text-sm">Redaction complete</p>
-                <p className="text-green-600 text-sm mt-0.5">
-                  {job.result.redaction_count} item(s) redacted. The redacted document has been saved to your library.
-                </p>
+      {/* ── Error banner ── */}
+      {error && !running && (
+        <div className="mb-6 rounded-xl bg-red-50 border border-red-200 p-4">
+          <p className="font-semibold text-red-800 text-sm">Redaction failed</p>
+          <p className="text-red-600 text-sm mt-0.5">{error}</p>
+        </div>
+      )}
+
+      {/* ── Results ── */}
+      {successJobs.length > 0 && (
+        <div className="mb-6 space-y-3">
+          {successJobs.map((job, idx) => (
+            <div key={idx} className="rounded-xl bg-green-50 border border-green-200 p-4 flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <span className="text-green-500 text-lg mt-0.5">✓</span>
+                <div>
+                  <p className="font-semibold text-green-800 text-sm">Redaction complete</p>
+                  <p className="text-green-700 text-sm mt-0.5">
+                    {job.result?.redaction_count ?? 0} item(s) redacted
+                    {job.result?.redacted_pages ? ` across ${job.result.redacted_pages} page(s)` : ''}.
+                    The redacted copy has been saved to your library.
+                  </p>
+                </div>
+              </div>
+              {job.result?.download_url && (
+                <a
+                  href={job.result.download_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg font-medium"
+                >
+                  <Download className="w-4 h-4" />
+                  Download
+                </a>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Empty / intro state ── */}
+      {!running && completedJobs.length === 0 && (
+        <Card className="max-w-xl mx-auto mt-16 text-center">
+          <CardContent>
+            <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <ShieldOff className="w-8 h-8 text-slate-400" />
+            </div>
+            <h2 className="text-lg font-semibold text-slate-800 mb-2">No redactions yet</h2>
+            <p className="text-sm text-slate-500 mb-6">
+              Click <strong>Redact Document</strong> to select one or more documents from your library.
+              The AI will automatically detect and black out all patient PII — the original is never modified.
+            </p>
+            <div className="grid grid-cols-2 gap-3 text-left text-xs text-slate-600 bg-slate-50 rounded-lg p-4 mb-6">
+              {[
+                '🔒 Patient name',
+                '🔒 Date of birth',
+                '🔒 Social Security Number',
+                '🔒 Address & phone',
+                '🔒 Insurance / Member ID',
+                '🔒 Medical Record Number',
+                '🔒 Driver\'s license',
+                '🔒 Photos & signatures',
+              ].map(item => (
+                <div key={item} className="flex items-center gap-1.5">{item}</div>
+              ))}
+            </div>
+            <Button
+              variant="dark"
+              onClick={() => { setShowDialog(true); setError(null); }}
+              className="gap-2"
+            >
+              <ShieldOff className="w-4 h-4" />
+              Redact Document
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Document picker dialog ── */}
+      <Dialog open={showDialog} onOpenChange={setShowDialog}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Select Documents to Redact</DialogTitle>
+            <DialogDescription>
+              Choose one or more processed documents. The AI will detect and black out all PII.
+              A redacted copy is saved to your library — the original is not modified.
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Selection summary */}
+          {selectedDocs.length > 0 && (
+            <div className="mb-4 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between">
+              <span className="text-blue-800 text-sm font-medium">
+                {selectedDocs.length} document{selectedDocs.length !== 1 ? 's' : ''} selected
+              </span>
+              <div className="flex gap-2">
+                <button onClick={selectAll} className="text-xs text-blue-600 hover:underline">Select all</button>
+                <span className="text-blue-300">|</span>
+                <button onClick={clearAll} className="text-xs text-blue-600 hover:underline">Clear</button>
               </div>
             </div>
-            <a
-              href={job.result.download_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="shrink-0 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg font-medium"
+          )}
+
+          {/* Document list grouped by folder */}
+          {docsLoading ? (
+            <div className="flex items-center justify-center py-12 text-slate-400 gap-2">
+              <Loader className="w-5 h-5" /> Loading documents…
+            </div>
+          ) : Object.keys(documentsByFolder).length === 0 ? (
+            <div className="text-center py-12 text-slate-400 text-sm">
+              No processed documents found. Upload and process documents in the Library first.
+            </div>
+          ) : (
+            <div className="space-y-4 overflow-y-auto" style={{ maxHeight: '52vh' }}>
+              {Object.keys(documentsByFolder).sort().map(folderName => {
+                const folderDocs = documentsByFolder[folderName];
+                const allFolderSelected = folderDocs.every(d => selectedDocs.includes(d.id));
+                const someFolderSelected = folderDocs.some(d => selectedDocs.includes(d.id));
+
+                return (
+                  <div key={folderName} className="border-2 border-slate-200 rounded-xl p-4">
+                    {/* Folder header */}
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Folder className="w-4 h-4 text-blue-500" />
+                        <span className="font-semibold text-slate-800 text-sm">{folderName}</span>
+                        {someFolderSelected && (
+                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-300">
+                            {folderDocs.filter(d => selectedDocs.includes(d.id)).length} selected
+                          </Badge>
+                        )}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => toggleFolder(folderDocs)}
+                        className={allFolderSelected ? 'bg-blue-50 border-blue-300 text-blue-700' : ''}
+                      >
+                        {allFolderSelected
+                          ? <><CheckSquare className="w-3.5 h-3.5 mr-1" />Deselect all</>
+                          : <><Square className="w-3.5 h-3.5 mr-1" />Select all</>}
+                      </Button>
+                    </div>
+
+                    {/* Doc rows */}
+                    <div className="space-y-2">
+                      {folderDocs.map(doc => {
+                        const checked = selectedDocs.includes(doc.id);
+                        return (
+                          <div
+                            key={doc.id}
+                            onClick={() => toggleDoc(doc.id)}
+                            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors
+                              ${checked
+                                ? 'bg-blue-50 border-blue-300'
+                                : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'}`}
+                          >
+                            <Checkbox checked={checked} onCheckedChange={() => toggleDoc(doc.id)} />
+                            <FileIcon className="w-4 h-4 text-slate-400 shrink-0" />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium text-slate-800 truncate">{getDocLabel(doc)}</p>
+                              {doc.provider_name && (
+                                <p className="text-xs text-slate-400 truncate">{doc.provider_name}</p>
+                              )}
+                            </div>
+                            {doc.created_at && (
+                              <span className="text-xs text-slate-400 shrink-0">
+                                {new Date(doc.created_at).toLocaleDateString()}
+                              </span>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDialog(false)}>Cancel</Button>
+            <Button
+              variant="dark"
+              disabled={selectedDocs.length === 0 || running}
+              onClick={handleRedact}
+              className="gap-2"
             >
-              Download
-            </a>
-          </div>
-        ) : job.status === 'error' ? (
-          <div key={job.job_id} className="mb-5 rounded-xl bg-red-50 border border-red-200 p-4">
-            <p className="font-medium text-red-800 text-sm">Redaction failed</p>
-            <p className="text-red-600 text-sm mt-0.5">{job.progress_message}</p>
-          </div>
-        ) : null
-      )}
-
-      {/* Search */}
-      <div className="mb-4">
-        <input
-          type="text"
-          placeholder="Search documents…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="w-full max-w-md px-4 py-2 rounded-lg border border-gray-300 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-        />
-      </div>
-
-      {/* Info callout */}
-      <div className="mb-5 rounded-xl bg-amber-50 border border-amber-200 p-3 flex gap-2 text-sm text-amber-800">
-        <span>ℹ️</span>
-        <span>
-          Only processed documents from your library are shown. The redacted copy is saved back to your library with a
-          <span className="mx-1 font-medium">🕵️ Redacted</span> label. The original is not modified.
-        </span>
-      </div>
-
-      {/* Document list */}
-      {loading ? (
-        <div className="text-center py-16 text-gray-400">Loading documents…</div>
-      ) : filtered.length === 0 ? (
-        <div className="text-center py-16 text-gray-400">
-          {search ? 'No documents match your search.' : 'No processed documents found. Upload and process documents in the Library first.'}
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {filtered.map(doc => {
-            const isRunning = activeJob?.docId === doc.aws_document_id;
-            const isDone    = !!completedJobs[doc.aws_document_id];
-            return (
-              <div
-                key={doc.aws_document_id}
-                className="bg-white rounded-xl border border-gray-200 px-4 py-3 flex items-center justify-between gap-4 hover:border-gray-300 transition-colors"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0 text-sm">
-                    📄
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-gray-800 truncate">
-                      {doc.original_filename}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-0.5">
-                      {doc.created_at ? new Date(doc.created_at).toLocaleDateString() : ''}
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => startRedaction(doc)}
-                  disabled={!!activeJob || isDone}
-                  className={`shrink-0 px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                    isDone
-                      ? 'bg-green-100 text-green-700 cursor-default'
-                      : isRunning
-                      ? 'bg-blue-100 text-blue-600 cursor-not-allowed'
-                      : activeJob
-                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                      : 'bg-slate-800 hover:bg-slate-700 text-white'
-                  }`}
-                >
-                  {isDone ? '✓ Redacted' : isRunning ? 'Redacting…' : '🕵️ Redact'}
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      )}
+              <ShieldOff className="w-4 h-4" />
+              Redact {selectedDocs.length > 0 ? `${selectedDocs.length} Document${selectedDocs.length !== 1 ? 's' : ''}` : 'Selected'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
