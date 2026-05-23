@@ -9,8 +9,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import MedicalSummaryForm from "./summaries/MedicalSummaryForm";
 import SummaryViewer from "./summaries/SummaryViewer";
-import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle } from 'docx';
-import { getExportPrefs, getMacros } from './Settings';
+import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle, Header, ImageRun } from 'docx';
+import { getExportPrefs } from './Settings';
 
 // ── Env vars (CRA) ────────────────────────────────────────────────────────────
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || "https://1h4kpspbs6.execute-api.us-east-1.amazonaws.com/prod";
@@ -994,7 +994,6 @@ const normalizePTSetting = (setting: string): string => {
         const ext = (letterheadUrl.split('?')[0].split('.').pop() || 'png').toLowerCase();
         const mediaType = ext === 'jpg' || ext === 'jpeg' ? 'jpeg' : 'png';
         // Re-build doc with header image
-        const { Header, ImageRun } = await import('docx');
         const headerImg = new ImageRun({
           data: imgBuffer,
           transformation: { width: 756, height: 110 },
