@@ -10,6 +10,7 @@ import { Loader2 } from "lucide-react";
 import MedicalSummaryForm from "./summaries/MedicalSummaryForm";
 import SummaryViewer from "./summaries/SummaryViewer";
 import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle } from 'docx';
+import { getExportPrefs, getMacros } from './Settings';
 
 // ── Env vars (CRA) ────────────────────────────────────────────────────────────
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || "https://1h4kpspbs6.execute-api.us-east-1.amazonaws.com/prod";
@@ -848,9 +849,10 @@ const normalizePTSetting = (setting: string): string => {
     const caseNumber  = (freshSummary.case_number  || '')         as string;
 
     const ptToHalfPt = (pt: number) => pt * 2;
-    const FONT     = 'Calibri';
-    const SIZE     = ptToHalfPt(11);
-    const SIZE_SM  = ptToHalfPt(9);
+    const prefs    = getExportPrefs();
+    const FONT     = prefs.fontFamily;
+    const SIZE     = ptToHalfPt(prefs.fontSize);
+    const SIZE_SM  = ptToHalfPt(Math.max(8, prefs.fontSize - 2));
     const SIZE_TTL = ptToHalfPt(16);
     const DATE_INDENT = 1540;
 
@@ -980,6 +982,42 @@ const normalizePTSetting = (setting: string): string => {
     const doc = new Document({
       sections: [{ properties: { page: { margin: { top: 720, bottom: 720, left: 720, right: 720 } } }, children: sections_content }],
     });
+
+    // ── Letterhead watermark (optional) ───────────────────────────────────────
+    const { letterheadUrl } = getExportPrefs();
+    if (letterheadUrl && window.confirm('Apply your letterhead as a background watermark on this export?')) {
+      // Fetch image as base64 and inject into docx as a header image
+      try {
+        const imgResp = await fetch(letterheadUrl);
+        const imgBlob = await imgResp.blob();
+        const imgBuffer = await imgBlob.arrayBuffer();
+        const ext = (letterheadUrl.split('?')[0].split('.').pop() || 'png').toLowerCase();
+        const mediaType = ext === 'jpg' || ext === 'jpeg' ? 'jpeg' : 'png';
+        // Re-build doc with header image
+        const { Header, ImageRun } = await import('docx');
+        const headerImg = new ImageRun({
+          data: imgBuffer,
+          transformation: { width: 756, height: 110 },
+          type: mediaType,
+        });
+        const docWithLetterhead = new Document({
+          sections: [{
+            properties: { page: { margin: { top: 1400, bottom: 720, left: 720, right: 720 } } },
+            headers: { default: new Header({ children: [new Paragraph({ children: [headerImg] })] }) },
+            children: sections_content,
+          }],
+        });
+        const buffer = await Packer.toBlob(docWithLetterhead);
+        const dlUrl = URL.createObjectURL(buffer);
+        const lin = document.createElement('a');
+        lin.href = dlUrl; lin.download = filename;
+        document.body.appendChild(lin); lin.click();
+        setTimeout(() => { document.body.removeChild(lin); URL.revokeObjectURL(dlUrl); }, 1000);
+        return;
+      } catch (lhErr) {
+        console.warn('Letterhead failed, exporting without:', lhErr);
+      }
+    }
 
     const buffer = await Packer.toBlob(doc);
     const dlUrl = URL.createObjectURL(buffer);
