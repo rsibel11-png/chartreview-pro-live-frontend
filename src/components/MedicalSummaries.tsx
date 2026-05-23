@@ -992,12 +992,11 @@ const normalizePTSetting = (setting: string): string => {
         const imgBlob = await imgResp.blob();
         const imgBuffer = await imgBlob.arrayBuffer();
         const ext = (letterheadUrl.split('?')[0].split('.').pop() || 'png').toLowerCase();
-        const mediaType = ext === 'jpg' || ext === 'jpeg' ? 'jpeg' : 'png';
-        // Re-build doc with header image
+        const imgType: 'png' | 'jpg' = (ext === 'jpg' || ext === 'jpeg') ? 'jpg' : 'png';
         const headerImg = new ImageRun({
           data: imgBuffer,
           transformation: { width: 756, height: 110 },
-          type: mediaType,
+          type: imgType,
         });
         const docWithLetterhead = new Document({
           sections: [{
