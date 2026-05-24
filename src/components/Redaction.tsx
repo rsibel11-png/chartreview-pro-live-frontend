@@ -392,15 +392,28 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
                 </div>
               </div>
               {job.result?.download_url && (
-                <a
-                  href={job.result.download_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  onClick={async () => {
+                    try {
+                      const resp = await fetch(job.result!.download_url);
+                      const blob = await resp.blob();
+                      const url  = URL.createObjectURL(blob);
+                      const a    = document.createElement('a');
+                      a.href     = url;
+                      a.download = (job.result!.download_url.split('/').pop() || 'redacted.pdf').split('?')[0];
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(url);
+                    } catch (e) {
+                      alert('Download failed. Please try again.');
+                    }
+                  }}
                   className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-sm rounded-lg font-medium"
                 >
                   <Download className="w-4 h-4" />
                   Download
-                </a>
+                </button>
               )}
             </div>
           ))}
