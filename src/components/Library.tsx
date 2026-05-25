@@ -13,6 +13,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import {
   FileText,
+  ShieldCheck,
   Trash2,
   Search,
   ExternalLink,
@@ -250,7 +251,9 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
       const raw = (Array.isArray(data) ? data : []).map((d) => ({
         ...d,
         id: d.aws_document_id || d.id,
-        title: d.title || d.file_name || d.filename || "Untitled",
+        is_redacted: d.is_redacted || false,
+        redacted_from: d.redacted_from || null,
+        title: d.original_filename || d.title || d.file_name || d.filename || "Untitled",
         created_date: d.created_date || d.created_at,
       }));
 
@@ -817,8 +820,12 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
 
                           {/* Icon + actions */}
                           <div className="flex items-start justify-between">
-                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center bg-cyan-100`}>
-                              <FileText className={`w-6 h-6 text-cyan-600`} />
+                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                              (doc as any).is_redacted ? "bg-green-100" : "bg-cyan-100"
+                            }`}>
+                              {(doc as any).is_redacted
+                                ? <ShieldCheck className="w-6 h-6 text-green-600" />
+                                : <FileText className="w-6 h-6 text-cyan-600" />}
                             </div>
                             <TooltipProvider>
                               <div className="flex gap-2">
