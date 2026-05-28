@@ -227,7 +227,18 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
     staleTime: 30000,
   });
 
-  // ── Group docs by folder (same as MedicalSummaries) ─────────────────────
+  // ── Group docs: by folder, then by original_document_id (case grouping) ──
+  // A "case group" is a set of parts sharing the same original_document_id.
+  // Single docs (no original_document_id) are treated as their own group.
+  interface CaseGroup {
+    key: string;                  // original_document_id or aws_document_id
+    isMultiPart: boolean;
+    parts: DocItem[];             // sorted by part number
+    label: string;                // display name (strip _PartN suffix)
+    providerName?: string;
+    date?: string;
+  }
+
   const documentsByFolder: Record<string, DocItem[]> = (documents as DocItem[]).reduce(
     (acc: Record<string, DocItem[]>, doc: DocItem) => {
       const folder = doc.folder_name || 'Unfiled';
@@ -237,65 +248,123 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
     }, {}
   );
 
+  // Build case groups per folder
+  const caseGroupsByFolder: Record<string, CaseGroup[]> = {};
+  for (const folder of Object.keys(documentsByFolder)) {
+    const docs = documentsByFolder[folder];
+    const groupMap: Record<string, DocItem[]> = {};
+    for (const doc of docs) {
+      const key = doc.original_document_id || doc.id;
+      if (!groupMap[key]) groupMap[key] = [];
+      groupMap[key].push(doc);
+    }
+    caseGroupsByFolder[folder] = Object.entries(groupMap).map(([key, parts]: [string, DocItem[]]) => {
+      const sorted = parts.slice().sort((a: DocItem, b: DocItem) => {
+        const aM = (a.original_filename || '').match(/[Pp]art(\d+)/);
+        const bM = (b.original_filename || '').match(/[Pp]art(\d+)/);
+        return (aM ? parseInt(aM[1]) : 0) - (bM ? parseInt(bM[1]) : 0);
+      });
+      const rawLabel = sorted[0].original_filename || sorted[0].title || sorted[0].file_name || key;
+      const label = rawLabel.replace(/_?[Pp]art\d+\.pdf$/i, '').replace(/\.pdf$/i, '');
+      return {
+        key,
+        isMultiPart: sorted.length > 1,
+        parts: sorted,
+        label,
+        providerName: sorted[0].provider_name,
+        date: sorted[0].created_at,
+      };
+    });
+  }
+
   const getDocLabel = (doc: DocItem) =>
     doc.title || doc.original_filename || doc.file_name || doc.aws_document_id;
 
-  // ── Poll job ─────────────────────────────────────────────────────────────
+  // ── Poll a job until complete ─────────────────────────────────────────────
+  const pollJobUntilDone = (jobId: string): Promise<RedactionJob> => {
+    return new Promise((resolve) => {
+      const poll = async () => {
+        try {
+          const job: RedactionJob = await awsProxy(`/jobs/${jobId}`);
+          setStatusMsg(job.progress_message || '');
+          if (job.status === 'complete' || job.status === 'error') {
+            resolve(job);
+          } else {
+            pollRef.current = setTimeout(poll, 3000);
+          }
+        } catch { pollRef.current = setTimeout(poll, 5000); }
+      };
+      pollRef.current = setTimeout(poll, 2000);
+    });
+  };
+
   const pollJob = async (jobId: string) => {
-    try {
-      const data: RedactionJob = await awsProxy(`/jobs/${jobId}`);
-      setStatusMsg(data.progress_message || '');
-      if (data.status === 'complete' || data.status === 'error') {
-        setRunning(false);
-        setCompletedJobs(prev => [data, ...prev]);
-        if (data.status === 'error') setError(data.progress_message);
-        if (pollRef.current) clearTimeout(pollRef.current);
-      } else {
-        pollRef.current = setTimeout(() => pollJob(jobId), 3000);
-      }
-    } catch (err: any) {
-      pollRef.current = setTimeout(() => pollJob(jobId), 5000);
-    }
+    const job = await pollJobUntilDone(jobId);
+    setRunning(false);
+    setCompletedJobs(prev => [job, ...prev]);
+    if (job.status === 'error') setError(job.progress_message);
+    if (pollRef.current) clearTimeout(pollRef.current);
   };
 
   useEffect(() => () => { if (pollRef.current) clearTimeout(pollRef.current); }, []);
 
-  // ── Start redaction ──────────────────────────────────────────────────────
+  // ── Redact a case group (multi-part → merge, single → existing flow) ──────
+  const handleRedactCase = async (group: CaseGroup) => {
+    if (running) return;
+    setShowDialog(false);
+    setRunning(true);
+    setError(null);
+
+    try {
+      if (group.isMultiPart) {
+        setStatusMsg(`Redacting ${group.parts.length} parts and merging…`);
+        const resp = await awsProxy('/documents/redact-case', 'POST', {
+          doc_ids: group.parts.map((p: DocItem) => p.id),
+          original_document_id: group.key,
+        });
+        if (resp.job_id) {
+          const job = await pollJobUntilDone(resp.job_id);
+          setCompletedJobs(prev => [job, ...prev]);
+          if (job.status === 'error') setError(job.progress_message);
+        }
+      } else {
+        // Single document — use existing per-doc endpoint
+        setStatusMsg('Starting redaction…');
+        const resp = await awsProxy(`/documents/${group.parts[0].id}/redact`, 'POST');
+        if (resp.job_id) {
+          const job = await pollJobUntilDone(resp.job_id);
+          setCompletedJobs(prev => [job, ...prev]);
+          if (job.status === 'error') setError(job.progress_message);
+        }
+      }
+    } catch (err: any) {
+      setError(`Redaction failed: ${err.message}`);
+    }
+
+    setRunning(false);
+    setStatusMsg('');
+  };
+
+  // ── Legacy: redact individually selected docs (kept for folder-level select) 
   const handleRedact = async () => {
     if (!selectedDocs.length || running) return;
     setShowDialog(false);
     setRunning(true);
     setError(null);
     setStatusMsg('Starting redaction…');
-
-    // Redact each selected doc sequentially (could be parallelized later)
     for (const docId of selectedDocs) {
       try {
-        setStatusMsg(`Starting redaction for document…`);
-        const data = await awsProxy(`/documents/${docId}/redact`, 'POST');
-        if (data.job_id) {
-          await new Promise<void>((resolve) => {
-            const poll = async () => {
-              try {
-                const job: RedactionJob = await awsProxy(`/jobs/${data.job_id}`);
-                setStatusMsg(job.progress_message || '');
-                if (job.status === 'complete' || job.status === 'error') {
-                  setCompletedJobs(prev => [job, ...prev]);
-                  if (job.status === 'error') setError(job.progress_message);
-                  resolve();
-                } else {
-                  pollRef.current = setTimeout(poll, 3000);
-                }
-              } catch { pollRef.current = setTimeout(poll, 5000); }
-            };
-            pollRef.current = setTimeout(poll, 2000);
-          });
+        setStatusMsg(`Redacting document…`);
+        const resp = await awsProxy(`/documents/${docId}/redact`, 'POST');
+        if (resp.job_id) {
+          const job = await pollJobUntilDone(resp.job_id);
+          setCompletedJobs(prev => [job, ...prev]);
+          if (job.status === 'error') setError(job.progress_message);
         }
       } catch (err: any) {
         setError(`Failed to redact document: ${err.message}`);
       }
     }
-
     setRunning(false);
     setSelectedDocs([]);
     setStatusMsg('');
@@ -483,76 +552,62 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
             </div>
           )}
 
-          {/* Document list grouped by folder */}
+          {/* Document list grouped by folder → case groups */}
           {docsLoading ? (
             <div className="flex items-center justify-center py-12 text-slate-400 gap-2">
               <Loader className="w-5 h-5" /> Loading documents…
             </div>
-          ) : Object.keys(documentsByFolder).length === 0 ? (
+          ) : Object.keys(caseGroupsByFolder).length === 0 ? (
             <div className="text-center py-12 text-slate-400 text-sm">
               No processed documents found. Upload and process documents in the Library first.
             </div>
           ) : (
             <div className="space-y-4 overflow-y-auto" style={{ maxHeight: '52vh' }}>
-              {Object.keys(documentsByFolder).sort().map(folderName => {
-                const folderDocs = documentsByFolder[folderName];
-                const allFolderSelected = folderDocs.every(d => selectedDocs.includes(d.id));
-                const someFolderSelected = folderDocs.some(d => selectedDocs.includes(d.id));
-
+              {Object.keys(caseGroupsByFolder).sort().map(folderName => {
+                const groups = caseGroupsByFolder[folderName];
                 return (
                   <div key={folderName} className="border-2 border-slate-200 rounded-xl p-4">
                     {/* Folder header */}
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <Folder className="w-4 h-4 text-blue-500" />
-                        <span className="font-semibold text-slate-800 text-sm">{folderName}</span>
-                        {someFolderSelected && (
-                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-300">
-                            {folderDocs.filter(d => selectedDocs.includes(d.id)).length} selected
-                          </Badge>
-                        )}
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => toggleFolder(folderDocs)}
-                        className={allFolderSelected ? 'bg-blue-50 border-blue-300 text-blue-700' : ''}
-                      >
-                        {allFolderSelected
-                          ? <><CheckSquare className="w-3.5 h-3.5 mr-1" />Deselect all</>
-                          : <><Square className="w-3.5 h-3.5 mr-1" />Select all</>}
-                      </Button>
+                    <div className="flex items-center gap-2 mb-3">
+                      <Folder className="w-4 h-4 text-blue-500" />
+                      <span className="font-semibold text-slate-800 text-sm">{folderName}</span>
+                      <Badge variant="outline" className="text-slate-500 border-slate-300">
+                        {groups.length} case{groups.length !== 1 ? 's' : ''}
+                      </Badge>
                     </div>
 
-                    {/* Doc rows */}
+                    {/* Case group rows */}
                     <div className="space-y-2">
-                      {folderDocs.map(doc => {
-                        const checked = selectedDocs.includes(doc.id);
-                        return (
-                          <div
-                            key={doc.id}
-                            onClick={() => toggleDoc(doc.id)}
-                            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border cursor-pointer transition-colors
-                              ${checked
-                                ? 'bg-blue-50 border-blue-300'
-                                : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'}`}
-                          >
-                            <Checkbox checked={checked} onCheckedChange={() => toggleDoc(doc.id)} />
-                            <FileIcon className="w-4 h-4 text-slate-400 shrink-0" />
-                            <div className="min-w-0 flex-1">
-                              <p className="text-sm font-medium text-slate-800 truncate">{getDocLabel(doc)}</p>
-                              {doc.provider_name && (
-                                <p className="text-xs text-slate-400 truncate">{doc.provider_name}</p>
-                              )}
-                            </div>
-                            {doc.created_at && (
-                              <span className="text-xs text-slate-400 shrink-0">
-                                {new Date(doc.created_at).toLocaleDateString()}
-                              </span>
-                            )}
+                      {groups.map((group: CaseGroup) => (
+                        <div
+                          key={group.key}
+                          className="flex items-center gap-3 px-3 py-2.5 rounded-lg border bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-colors"
+                        >
+                          <FileIcon className="w-4 h-4 text-slate-400 shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-slate-800 truncate">{group.label}</p>
+                            <p className="text-xs text-slate-400 truncate">
+                              {group.providerName && <span>{group.providerName}</span>}
+                              {group.isMultiPart && <span className="ml-1 text-blue-500">· {group.parts.length} parts</span>}
+                            </p>
                           </div>
-                        );
-                      })}
+                          {group.date && (
+                            <span className="text-xs text-slate-400 shrink-0">
+                              {new Date(group.date).toLocaleDateString()}
+                            </span>
+                          )}
+                          <Button
+                            variant="dark"
+                            size="sm"
+                            disabled={running}
+                            onClick={() => handleRedactCase(group)}
+                            className="gap-1.5 shrink-0"
+                          >
+                            <ShieldOff className="w-3.5 h-3.5" />
+                            {group.isMultiPart ? `Redact Case (${group.parts.length} parts)` : 'Redact'}
+                          </Button>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 );
@@ -562,15 +617,6 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowDialog(false)}>Cancel</Button>
-            <Button
-              variant="dark"
-              disabled={selectedDocs.length === 0 || running}
-              onClick={handleRedact}
-              className="gap-2"
-            >
-              <ShieldOff className="w-4 h-4" />
-              Redact {selectedDocs.length > 0 ? `${selectedDocs.length} Document${selectedDocs.length !== 1 ? 's' : ''}` : 'Selected'}
-            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
