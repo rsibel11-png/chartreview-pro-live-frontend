@@ -318,7 +318,7 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
     try {
       if (group.isMultiPart) {
         setStatusMsg(`Redacting ${group.parts.length} parts and merging…`);
-        const resp = await awsProxy('/documents/redact-case', 'POST', {
+        const resp = await awsProxy('/redact-case', 'POST', {
           doc_ids: group.parts.map((p: DocItem) => p.id),
           original_document_id: group.key,
         });
