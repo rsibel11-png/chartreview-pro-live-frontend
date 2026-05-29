@@ -3,6 +3,7 @@
 // awsProxy rewired to direct fetch (no Base44 relay)
 
 import React, { useState, useEffect } from "react";
+import DuplicateVisitDetector from "./DuplicateVisitDetector";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 // ── Env vars ──────────────────────────────────────────────────────────────────
@@ -254,6 +255,55 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
     setExpandedVisit((formData.visits || []).length);
   };
 
+  const isC4Visit = (visit: any): boolean => {
+    const fields = [visit.chief_complaint, visit.hpi_summary, visit.practice_setting, visit.rendering_provider, visit.impression_diagnosis, visit.treatment_plan];
+    return fields.some((f: any) => f && /c-?4\b/i.test(f));
+  };
+
+  const handleDuplicateAction = (action: string, visitIndices: number[]) => {
+    if (action === "delete-selected") {
+      const indicesToDelete = new Set<number>(visitIndices);
+      setFormData((prev: any) => {
+        // If a C-4 visit is being deleted and a same-date non-C-4 survives, merge C-4 content in
+        const mergeMap: Record<number, any[]> = {};
+        (Array.isArray(prev.visits) ? prev.visits : []).forEach((visit: any, i: number) => {
+          if (!indicesToDelete.has(i)) return;
+          if (!isC4Visit(visit)) return;
+          const survivingIdx = prev.visits.findIndex((v: any, j: number) =>
+            !indicesToDelete.has(j) && v.visit_date === visit.visit_date
+          );
+          if (survivingIdx === -1) return;
+          if (!mergeMap[survivingIdx]) mergeMap[survivingIdx] = [];
+          mergeMap[survivingIdx].push(visit);
+        });
+
+        const newVisits = (Array.isArray(prev.visits) ? prev.visits : [])
+          .map((visit: any, i: number) => {
+            if (!mergeMap[i]) return visit;
+            let merged = { ...visit };
+            mergeMap[i].forEach((c4: any) => {
+              const append = (field: string, sep = "\n") => {
+                if (c4[field] && !merged[field]?.includes(c4[field])) {
+                  merged[field] = merged[field]
+                    ? `${merged[field]}${sep}[C-4] ${c4[field]}`
+                    : `[C-4] ${c4[field]}`;
+                }
+              };
+              append("chief_complaint");
+              append("hpi_summary");
+              append("impression_diagnosis");
+              append("treatment_plan");
+            });
+            return merged;
+          })
+          .filter((_: any, i: number) => !indicesToDelete.has(i));
+
+        return { ...prev, visits: newVisits };
+      });
+      setExpandedVisit(-1);
+    }
+  };
+
   const removeVisit = (index: number) => {
     setFormData((prev: any) => ({
       ...prev,
@@ -394,6 +444,13 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
                 <Plus className="w-4 h-4 mr-2" />Add Visit
               </Button>
             </div>
+
+            {formData.visits && formData.visits.length > 0 && (
+              <DuplicateVisitDetector
+                visits={formData.visits}
+                onDuplicateAction={handleDuplicateAction}
+              />
+            )}
 
             {(formData.visits || []).map((visit: any, index: number) => {
               const isExpanded = expandedVisit === index;
