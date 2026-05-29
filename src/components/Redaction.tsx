@@ -189,6 +189,88 @@ interface RedactionJob {
   };
 }
 
+// ── PII Modal ─────────────────────────────────────────────────────────────────
+interface PiiField { label: string; key: string; placeholder: string; }
+const PII_FIELDS: PiiField[] = [
+  { label: 'Patient Name (Last, First)',  key: 'patientName',  placeholder: 'e.g. GARCIA, CARLOS' },
+  { label: 'Date of Birth',               key: 'dob',          placeholder: 'e.g. 02/06/1976' },
+  { label: 'Street Address',              key: 'street',       placeholder: 'e.g. 383 FREE FALL AVE' },
+  { label: 'City',                        key: 'city',         placeholder: 'e.g. NORTH LAS VEGAS' },
+  { label: 'State / Zip',                 key: 'stateZip',     placeholder: 'e.g. NV 89084' },
+  { label: 'Phone Number',                key: 'phone',        placeholder: 'e.g. 702-575-2864' },
+  { label: 'SSN (or last 4)',             key: 'ssn',          placeholder: 'e.g. XXX-XX-1234' },
+  { label: 'MRN / Account #',            key: 'mrn',          placeholder: 'e.g. 21633854' },
+  { label: 'Employer',                    key: 'employer',     placeholder: 'e.g. TIER 1 DEMOLITION' },
+  { label: 'Spouse / Partner Name',       key: 'spouse',       placeholder: 'e.g. MARIA GARCIA' },
+  { label: 'Next of Kin / POA Name',      key: 'nokPoa',       placeholder: 'e.g. LUIS MORA' },
+  { label: 'Son / Daughter / Other Rel.', key: 'relative',     placeholder: 'e.g. SOFIA GARCIA' },
+  { label: 'Additional value #1',         key: 'extra1',       placeholder: 'Any other value to redact' },
+  { label: 'Additional value #2',         key: 'extra2',       placeholder: 'Any other value to redact' },
+];
+type PiiFormState = Record<string, string>;
+
+function buildUserPiiArray(form: PiiFormState): string[] {
+  const values: string[] = [];
+  const add = (v: string) => { const t = (v || '').trim(); if (t.length >= 2) values.push(t); };
+  if (form.patientName) { add(form.patientName); form.patientName.split(/[,\s]+/).forEach((p: string) => { if (p.length >= 2) add(p); }); }
+  if (form.dob) add(form.dob);
+  if (form.street) { add(form.street); form.street.trim().split(/\s+/).forEach((p: string) => { if (p.length >= 3) add(p); }); }
+  if (form.city) { add(form.city); form.city.split(/\s+/).forEach((p: string) => { if (p.length >= 4) add(p); }); }
+  if (form.stateZip) { add(form.stateZip); const zm = form.stateZip.match(/(\d{5})(?:-\d{4})?/); if (zm) add(zm[1]); }
+  if (form.phone) add(form.phone);
+  if (form.ssn) add(form.ssn);
+  if (form.mrn) add(form.mrn);
+  if (form.employer) { add(form.employer); form.employer.split(/\s+/).forEach((p: string) => { if (p.length >= 4) add(p); }); }
+  if (form.spouse) { add(form.spouse); form.spouse.split(/[,\s]+/).forEach((p: string) => { if (p.length >= 2) add(p); }); }
+  if (form.nokPoa) { add(form.nokPoa); form.nokPoa.split(/[,\s]+/).forEach((p: string) => { if (p.length >= 2) add(p); }); }
+  if (form.relative) { add(form.relative); form.relative.split(/[,\s]+/).forEach((p: string) => { if (p.length >= 2) add(p); }); }
+  if (form.extra1) add(form.extra1);
+  if (form.extra2) add(form.extra2);
+  return Array.from(new Set(values.filter((v: string) => v.length >= 2)));
+}
+
+function PiiModal({ open, onClose, onConfirm, caseLabel }: {
+  open: boolean; onClose: () => void; onConfirm: (piiValues: string[]) => void; caseLabel: string;
+}) {
+  const [form, setForm] = React.useState<PiiFormState>({});
+  const setF = (key: string, val: string) => setForm(prev => ({ ...prev, [key]: val }));
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div className="relative z-10 bg-white rounded-xl shadow-2xl w-full mx-4 max-w-lg flex flex-col" style={{ maxHeight: '90vh' }}>
+        <div className="px-6 py-4 border-b border-slate-100">
+          <h2 className="text-lg font-semibold text-slate-900">Redaction Settings</h2>
+          <p className="text-sm text-slate-500 mt-0.5 truncate">{caseLabel}</p>
+        </div>
+        <div className="px-6 py-4 overflow-y-auto flex-1">
+          <p className="text-sm text-slate-600 mb-4">
+            PII is detected automatically. Entering known patient details below improves accuracy — fields left blank are still auto-detected.
+          </p>
+          <div className="space-y-3">
+            {PII_FIELDS.map((f: PiiField) => (
+              <div key={f.key}>
+                <label className="block text-xs font-medium text-slate-600 mb-1">{f.label}</label>
+                <input type="text" value={form[f.key] || ''} onChange={e => setF(f.key, e.target.value)}
+                  placeholder={f.placeholder}
+                  className="w-full border border-slate-300 rounded-md px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-slate-400 mt-4 leading-relaxed">
+            Spouse, next-of-kin, POA, son/daughter, emergency contacts, and employer names are also detected automatically from document field labels throughout the file.
+          </p>
+        </div>
+        <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+          <button onClick={onClose} className="px-4 py-2 text-sm rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-slate-50">Cancel</button>
+          <button onClick={() => { onConfirm(buildUserPiiArray(form)); setForm({}); }}
+            className="px-4 py-2 text-sm rounded-md bg-blue-600 text-white font-medium hover:bg-blue-700">Redact Document</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 interface RedactionProps {
   onNavigate?: (page: string, params?: any) => void;
@@ -206,6 +288,8 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
   const [completedJobs, setCompletedJobs]         = useState<RedactionJob[]>([]);
   const [error, setError]                         = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [piiModalOpen, setPiiModalOpen]   = useState(false);
+  const [pendingGroup, setPendingGroup]   = useState<CaseGroup | null>(null);
 
   // ── Fetch all docs ───────────────────────────────────────────────────────
   const { data: documents = [], isLoading: docsLoading } = useQuery({
@@ -309,18 +393,24 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
   useEffect(() => () => { if (pollRef.current) clearTimeout(pollRef.current); }, []);
 
   // ── Redact a case group (multi-part → merge, single → existing flow) ──────
-  const handleRedactCase = async (group: CaseGroup) => {
+  const handleRedactCase = (group: CaseGroup) => {
     if (running) return;
     setShowDialog(false);
+    setPendingGroup(group);
+    setPiiModalOpen(true);
+  };
+
+  const executeRedactCase = async (group: CaseGroup, userPii: string[]) => {
     setRunning(true);
     setError(null);
-
+    const extra = userPii.length > 0 ? { user_supplied_pii: userPii } : {};
     try {
       if (group.isMultiPart) {
         setStatusMsg(`Redacting ${group.parts.length} parts and merging…`);
         const resp = await awsProxy('/documents/redact-case/redact', 'POST', {
           doc_ids: group.parts.map((p: DocItem) => p.id),
           original_document_id: group.key,
+          ...extra,
         });
         if (resp.job_id) {
           const job = await pollJobUntilDone(resp.job_id);
@@ -328,9 +418,9 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
           if (job.status === 'error') setError(job.progress_message);
         }
       } else {
-        // Single document — use existing per-doc endpoint
         setStatusMsg('Starting redaction…');
-        const resp = await awsProxy(`/documents/${group.parts[0].id}/redact`, 'POST');
+        const resp = await awsProxy(`/documents/${group.parts[0].id}/redact`, 'POST',
+          userPii.length > 0 ? extra : undefined);
         if (resp.job_id) {
           const job = await pollJobUntilDone(resp.job_id);
           setCompletedJobs(prev => [job, ...prev]);
@@ -340,7 +430,6 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
     } catch (err: any) {
       setError(`Redaction failed: ${err.message}`);
     }
-
     setRunning(false);
     setStatusMsg('');
   };
@@ -621,6 +710,16 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
         </DialogContent>
       </Dialog>
     </div>
+      <PiiModal
+        open={piiModalOpen}
+        caseLabel={pendingGroup ? pendingGroup.label : ''}
+        onClose={() => { setPiiModalOpen(false); setPendingGroup(null); }}
+        onConfirm={(userPii: string[]) => {
+          setPiiModalOpen(false);
+          if (pendingGroup) executeRedactCase(pendingGroup, userPii);
+          setPendingGroup(null);
+        }}
+      />
   );
 };
 
