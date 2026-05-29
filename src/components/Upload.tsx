@@ -96,6 +96,12 @@ const AlertCircle = ({ className = "" }) => (
       d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
   </svg>
 );
+const RefreshCw = ({ className = "" }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
+  </svg>
+);
 const Scissors = ({ className = "" }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <circle cx="6" cy="6" r="3" strokeWidth={2} /><circle cx="6" cy="18" r="3" strokeWidth={2} />
@@ -326,7 +332,7 @@ async function splitPdfClientSide(
 }
 
 // ── FileRow sub-component ─────────────────────────────────────────────────────
-const FileRow = React.memo(({ file, onRemove }: { file: any; onRemove: (id: string) => void }) => {
+const FileRow = React.memo(({ file, onRemove, onRetry }: { file: any; onRemove: (id: string) => void; onRetry: (id: string) => void }) => {
   const statusColor: any = {
     pending: "text-slate-500",
     uploading: "text-blue-600",
@@ -373,7 +379,19 @@ const FileRow = React.memo(({ file, onRemove }: { file: any; onRemove: (id: stri
           </button>
         )}
         {file.status === "completed" && <CheckCircle className="w-4 h-4 text-green-500" />}
-        {file.status === "error" && <AlertCircle className="w-4 h-4 text-red-500" />}
+        {file.status === "error" && (
+          <div className="flex items-center gap-1">
+            <AlertCircle className="w-4 h-4 text-red-500" />
+            <button
+              onClick={() => onRetry(file.id)}
+              title="Retry upload"
+              className="flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-white bg-red-500 hover:bg-red-600 rounded transition-colors"
+            >
+              <RefreshCw className="w-3 h-3" />
+              Retry
+            </button>
+          </div>
+        )}
         {["uploading", "splitting", "processing"].includes(file.status) && (
           <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
         )}
@@ -508,7 +526,24 @@ export default function Upload({ onNavigate, idToken = "" }: { onNavigate?: (pag
     }
   };
 
-  const handleUploadAll = async () => {
+  const handleRetry = (id: string) => {
+    setFileItems((prev: any[]) => prev.map((f: any) =>
+      f.id === id ? { ...f, status: "pending", error: undefined, progress: 0 } : f
+    ));
+    setTimeout(async () => {
+      const item = fileItems.find((f: any) => f.id === id);
+      if (item) {
+        setUploading(true);
+        try {
+          await uploadFile({ ...item, status: "pending", error: undefined, progress: 0 });
+        } finally {
+          setUploading(false);
+        }
+      }
+    }, 150);
+  };
+
+  handleUploadAll = async () => {
     const pending = fileItems.filter((f: any) => f.status === "pending");
     if (!pending.length) return;
     setUploading(true);
@@ -649,7 +684,7 @@ export default function Upload({ onNavigate, idToken = "" }: { onNavigate?: (pag
             </div>
             <div className="divide-y divide-slate-100 px-3 py-2 space-y-1">
               {fileItems.map((f: any) => (
-                <FileRow key={f.id} file={f} onRemove={removeFile} />
+                <FileRow key={f.id} file={f} onRemove={removeFile} onRetry={handleRetry} />
               ))}
             </div>
           </div>
