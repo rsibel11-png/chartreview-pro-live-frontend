@@ -526,21 +526,17 @@ export default function Upload({ onNavigate, idToken = "" }: { onNavigate?: (pag
     }
   };
 
-  const handleRetry = (id: string) => {
-    setFileItems((prev: any[]) => prev.map((f: any) =>
-      f.id === id ? { ...f, status: "pending", error: undefined, progress: 0 } : f
-    ));
-    setTimeout(async () => {
-      const item = fileItems.find((f: any) => f.id === id);
-      if (item) {
-        setUploading(true);
-        try {
-          await uploadFile({ ...item, status: "pending", error: undefined, progress: 0 });
-        } finally {
-          setUploading(false);
-        }
-      }
-    }, 150);
+  const handleRetry = async (id: string) => {
+    // Reset item to pending then re-upload it
+    const item = fileItems.find((f: any) => f.id === id);
+    if (!item) return;
+    updateItem(id, { status: "pending", error: undefined, progress: 0 });
+    setUploading(true);
+    try {
+      await uploadFile({ ...item, status: "pending", error: undefined, progress: 0 });
+    } finally {
+      setUploading(false);
+    }
   };
 
   handleUploadAll = async () => {
