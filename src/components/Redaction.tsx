@@ -709,7 +709,6 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
       <PiiModal
         open={piiModalOpen}
         caseLabel={pendingGroup ? pendingGroup.label : ''}
@@ -720,6 +719,7 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
           setPendingGroup(null);
         }}
       />
+    </div>
   );
 };
 
