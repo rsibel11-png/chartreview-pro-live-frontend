@@ -240,32 +240,28 @@ function buildUserPiiArray(form: PiiFormState): string[] {
   // DOB: add as-is — backend expandDob handles all format variants
   if (form.dob) add(form.dob);
 
-  // STREET: add full phrase + street-number alone + street-name without suffix
-  // Also add all street-suffix variants so "383 FREE FALL AVE" catches "383 FREE FALL LANE" etc
-  // Do NOT add individual street words (that causes "FALL", "FREE" to be redacted)
+  // STREET: only add the base phrase (number + name without suffix).
+  // The sliding window matches consecutive tokens, so "383 FREE FALL" matches
+  // "383 FREE FALL AVE", "383 FREE FALL LANE" etc — suffix is never needed.
+  // Individual words like FREE or FALL are never added and never match alone.
   if (form.street) {
     const s = form.street.trim().toUpperCase();
-    add(s); // full as entered
-
-    // Extract number + name parts
     const streetMatch = s.match(/^(\d+)\s+(.+)$/);
     if (streetMatch) {
       const num = streetMatch[1];
-      const nameRaw = streetMatch[2]; // e.g. "FREE FALL LANE"
-
-      // Strip any trailing suffix to get the base name
+      const nameRaw = streetMatch[2];
+      // Strip trailing street-type suffix to get the invariant base name
       const suffixRe = new RegExp(
-        '\b(' + STREET_SUFFIXES.join('|') + ')\.?$', 'i'
+        '\\b(' + STREET_SUFFIXES.join('|') + ')\\.?\\s*$', 'i'
       );
-      const baseName = nameRaw.replace(suffixRe, '').trim(); // "FREE FALL"
-
-      // Add number + base name (without suffix) — matches partial OCR
-      if (baseName) add(num + ' ' + baseName);
-
-      // Add all suffix variants
-      STREET_SUFFIXES.forEach((sfx: string) => {
-        add(num + ' ' + baseName + ' ' + sfx);
-      });
+      const baseName = nameRaw.replace(suffixRe, '').trim();
+      if (baseName) {
+        add(num + ' ' + baseName);   // "383 FREE FALL" — matches all suffix variants
+      } else {
+        add(s);                      // fallback: full string as entered
+      }
+    } else {
+      add(s);                        // no number prefix — add as-is
     }
   }
 
