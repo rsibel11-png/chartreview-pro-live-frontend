@@ -209,23 +209,99 @@ const PII_FIELDS: PiiField[] = [
 ];
 type PiiFormState = Record<string, string>;
 
+// Street suffix variants — when user enters "383 Free Fall Lane", also match
+// all common street type suffixes so "383 Free Fall Ave" is also caught.
+const STREET_SUFFIXES = [
+  'AVE','AVENUE','ST','STREET','BLVD','BOULEVARD','DR','DRIVE',
+  'RD','ROAD','LN','LANE','CT','COURT','WAY','PL','PLACE',
+  'CIR','CIRCLE','PKWY','PARKWAY','HWY','HIGHWAY','TER','TERRACE',
+  'TRAIL','TRL','LOOP','RUN','PATH','PASS',
+];
+
 function buildUserPiiArray(form: PiiFormState): string[] {
   const values: string[] = [];
-  const add = (v: string) => { const t = (v || '').trim(); if (t.length >= 2) values.push(t); };
-  if (form.patientName) { add(form.patientName); form.patientName.split(/[,\s]+/).forEach((p: string) => { if (p.length >= 2) add(p); }); }
+  const add = (v: string) => { const t = (v || '').trim().toUpperCase(); if (t.length >= 2) values.push(t); };
+
+  // NAME: add full name + both orderings, plus each part ≥2 chars
+  // Do NOT add common single words like "NORTH", "FALL" without context
+  if (form.patientName) {
+    const n = form.patientName.trim().toUpperCase();
+    add(n);
+    // Split on comma/space to get parts
+    const parts = n.split(/[,\s]+/).filter((p: string) => p.length >= 2);
+    parts.forEach((p: string) => add(p));
+    // Also add reversed ordering if comma-separated (GARCIA, CARLOS → CARLOS GARCIA)
+    if (n.includes(',')) {
+      const [last, ...first] = n.split(/,\s*/);
+      if (first.length) add((first.join(' ') + ' ' + last).trim());
+    }
+  }
+
+  // DOB: add as-is — backend expandDob handles all format variants
   if (form.dob) add(form.dob);
-  if (form.street) { add(form.street); form.street.trim().split(/\s+/).forEach((p: string) => { if (p.length >= 3) add(p); }); }
-  if (form.city) { add(form.city); form.city.split(/\s+/).forEach((p: string) => { if (p.length >= 4) add(p); }); }
-  if (form.stateZip) { add(form.stateZip); const zm = form.stateZip.match(/(\d{5})(?:-\d{4})?/); if (zm) add(zm[1]); }
+
+  // STREET: add full phrase + street-number alone + street-name without suffix
+  // Also add all street-suffix variants so "383 FREE FALL AVE" catches "383 FREE FALL LANE" etc
+  // Do NOT add individual street words (that causes "FALL", "FREE" to be redacted)
+  if (form.street) {
+    const s = form.street.trim().toUpperCase();
+    add(s); // full as entered
+
+    // Extract number + name parts
+    const streetMatch = s.match(/^(\d+)\s+(.+)$/);
+    if (streetMatch) {
+      const num = streetMatch[1];
+      const nameRaw = streetMatch[2]; // e.g. "FREE FALL LANE"
+
+      // Strip any trailing suffix to get the base name
+      const suffixRe = new RegExp(
+        '\b(' + STREET_SUFFIXES.join('|') + ')\.?$', 'i'
+      );
+      const baseName = nameRaw.replace(suffixRe, '').trim(); // "FREE FALL"
+
+      // Add number + base name (without suffix) — matches partial OCR
+      if (baseName) add(num + ' ' + baseName);
+
+      // Add all suffix variants
+      STREET_SUFFIXES.forEach((sfx: string) => {
+        add(num + ' ' + baseName + ' ' + sfx);
+      });
+    }
+  }
+
+  // CITY: add only as a WHOLE phrase — do NOT split into individual words
+  // "North Las Vegas" should only match as the full city name, not "NORTH" alone
+  if (form.city) add(form.city.trim().toUpperCase());
+
+  // STATE/ZIP: add zip code alone (5 digits)
+  if (form.stateZip) {
+    add(form.stateZip.trim().toUpperCase());
+    const zm = form.stateZip.match(/(\d{5})(?:-\d{4})?/);
+    if (zm) add(zm[1]);
+  }
+
+  // PHONE, SSN, MRN: add as-is
   if (form.phone) add(form.phone);
-  if (form.ssn) add(form.ssn);
-  if (form.mrn) add(form.mrn);
-  if (form.employer) { add(form.employer); form.employer.split(/\s+/).forEach((p: string) => { if (p.length >= 4) add(p); }); }
-  if (form.spouse) { add(form.spouse); form.spouse.split(/[,\s]+/).forEach((p: string) => { if (p.length >= 2) add(p); }); }
-  if (form.nokPoa) { add(form.nokPoa); form.nokPoa.split(/[,\s]+/).forEach((p: string) => { if (p.length >= 2) add(p); }); }
-  if (form.relative) { add(form.relative); form.relative.split(/[,\s]+/).forEach((p: string) => { if (p.length >= 2) add(p); }); }
+  if (form.ssn)   add(form.ssn);
+  if (form.mrn)   add(form.mrn);
+
+  // EMPLOYER: add full name only — no word splitting
+  if (form.employer) add(form.employer.trim().toUpperCase());
+
+  // NAMES (spouse, NOK, relative): add full + individual parts ≥2 chars
+  const addName = (v: string) => {
+    if (!v) return;
+    const n = v.trim().toUpperCase();
+    add(n);
+    n.split(/[,\s]+/).filter((p: string) => p.length >= 2).forEach((p: string) => add(p));
+  };
+  addName(form.spouse);
+  addName(form.nokPoa);
+  addName(form.relative);
+
   if (form.extra1) add(form.extra1);
   if (form.extra2) add(form.extra2);
+
   return Array.from(new Set(values.filter((v: string) => v.length >= 2)));
 }
 
