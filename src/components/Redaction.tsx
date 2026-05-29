@@ -273,13 +273,22 @@ function buildUserPiiArray(form: PiiFormState): string[] {
   // "North Las Vegas" should only match as the full city name, not "NORTH" alone
   if (form.city) add(form.city.trim().toUpperCase());
 
-  // STATE/ZIP: add zip code alone (5 digits)
+  /// STATE/ZIP: add all variants so OCR-merged "NV89084" and split "NV 89084" both match
   if (form.stateZip) {
-    add(form.stateZip.trim().toUpperCase());
-    const zm = form.stateZip.match(/(\d{5})(?:-\d{4})?/);
-    if (zm) add(zm[1]);
+    const sz = form.stateZip.trim().toUpperCase();
+    add(sz);
+    const szMatch = sz.match(/^([A-Z]{2})\s*(\d{5})(-\d{4})?$/);
+    if (szMatch) {
+      const st = szMatch[1], zip = szMatch[2], zip4 = szMatch[3] || '';
+      add(zip);
+      add(st + zip);
+      add(st + ' ' + zip);
+      if (zip4) { add(zip + zip4); add(zip + zip4.replace('-','')); }
+    } else {
+      const zm = sz.match(/(\d{5})(-\d{4})?/);
+      if (zm) { add(zm[1]); if (zm[2]) add(zm[1] + zm[2]); }
+    }
   }
-
   // PHONE, SSN, MRN: add as-is
   if (form.phone) add(form.phone);
   if (form.ssn)   add(form.ssn);
