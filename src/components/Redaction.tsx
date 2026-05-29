@@ -240,28 +240,34 @@ function buildUserPiiArray(form: PiiFormState): string[] {
   // DOB: add as-is — backend expandDob handles all format variants
   if (form.dob) add(form.dob);
 
-  // STREET: only add the base phrase (number + name without suffix).
-  // The sliding window matches consecutive tokens, so "383 FREE FALL" matches
-  // "383 FREE FALL AVE", "383 FREE FALL LANE" etc — suffix is never needed.
-  // Individual words like FREE or FALL are never added and never match alone.
+  // STREET: generate number+name+suffix variants (the complete address phrase).
+  // The sliding window does exact match on consecutive tokens, so:
+  //   "383 FREE FALL AVE"  → piiNorm "383freefallave"  → matches Textract ["383","FREE","FALL","AVE"]
+  //   "FREE" alone                                      → never matches anything ✅
+  // We generate every common suffix variant so whichever OCR reads is covered.
   if (form.street) {
     const s = form.street.trim().toUpperCase();
     const streetMatch = s.match(/^(\d+)\s+(.+)$/);
     if (streetMatch) {
       const num = streetMatch[1];
       const nameRaw = streetMatch[2];
-      // Strip trailing street-type suffix to get the invariant base name
+      // Strip any trailing suffix to get the invariant base name
       const suffixRe = new RegExp(
         '\\b(' + STREET_SUFFIXES.join('|') + ')\\.?\\s*$', 'i'
       );
-      const baseName = nameRaw.replace(suffixRe, '').trim();
+      const baseName = nameRaw.replace(suffixRe, '').trim(); // e.g. "FREE FALL"
       if (baseName) {
-        add(num + ' ' + baseName);   // "383 FREE FALL" — matches all suffix variants
+        // Add every suffix variant: "383 FREE FALL AVE", "383 FREE FALL ST", etc.
+        STREET_SUFFIXES.forEach((sfx: string) => {
+          add(num + ' ' + baseName + ' ' + sfx);
+        });
+        // Also add base without suffix as fallback (catches OCR that drops the type word)
+        add(num + ' ' + baseName);
       } else {
-        add(s);                      // fallback: full string as entered
+        add(s); // street name IS the suffix somehow — add as-is
       }
     } else {
-      add(s);                        // no number prefix — add as-is
+      add(s); // no leading number — add as-is
     }
   }
 
