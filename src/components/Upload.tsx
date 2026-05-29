@@ -539,7 +539,7 @@ export default function Upload({ onNavigate, idToken = "" }: { onNavigate?: (pag
     }
   };
 
-  handleUploadAll = async () => {
+  const handleUploadAll = async () => {
     const pending = fileItems.filter((f: any) => f.status === "pending");
     if (!pending.length) return;
     setUploading(true);
