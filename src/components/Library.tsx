@@ -874,7 +874,14 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <h3 className="font-semibold text-slate-900 line-clamp-2 mb-2 cursor-default">{doc.title}</h3>
+                                  <div className="flex items-start justify-between gap-2 mb-2">
+                                    <h3 className="font-semibold text-slate-900 line-clamp-2 cursor-default">{doc.title}</h3>
+                                    {totalPages > 0 && (
+                                      <span className="shrink-0 text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full whitespace-nowrap">
+                                        {totalPages} pg
+                                      </span>
+                                    )}
+                                  </div>
                                 </TooltipTrigger>
                                 <TooltipContent><p>{doc.title}</p></TooltipContent>
                               </Tooltip>
@@ -897,11 +904,7 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
                                 Size: <span className="font-medium">{formatSize(doc.file_size)}</span>
                               </p>
                             )}
-                            {totalPages > 0 && (
-                              <p className="text-xs text-slate-600">
-                                Pages: <span className="font-medium">{totalPages}</span>
-                              </p>
-                            )}
+
                             {doc.patient_name && (
                               <p className="text-xs text-slate-500 flex items-center gap-1">
                                 <User className="w-3 h-3" />{doc.patient_name}
