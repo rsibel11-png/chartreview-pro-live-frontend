@@ -200,8 +200,7 @@ function parseFacesheetPii(extractedText: string): Record<string, string> {
     || t.match(/([A-Z][A-Z ]+?),?\s+(NV|CA|TX|AZ|FL|NY|IL|WA|CO|GA|NM|UT|ID|OR|MN)\s+(\d{5})/);
   const city     = cityM ? cityM[1].trim() : '';
   const stateZip = cityM ? `${cityM[2]} ${cityM[3]}` : '';
-  const spouseM  = t.match(/(?:SPOUSE|COMPANION)\s*[:|]?\s*
-?([A-Z][A-Z ,]+)/i);
+  const spouseM  = t.match(/(?:SPOUSE|COMPANION)[\s\S]{0,20}([A-Z][A-Z ,]{3,30})/i);
   const spouse   = spouseM ? spouseM[1].trim() : '';
   const empM     = t.match(/(?:EMPLOYER|PATIENT\s*EMPLOYER)\s*[:|]?\s*(.+)/i);
   const employer = empM && !/UNEMPLOYED|NONE/i.test(empM[1]) ? empM[1].trim() : '';
