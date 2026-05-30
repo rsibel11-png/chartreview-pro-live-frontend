@@ -115,9 +115,18 @@ const AlertDialogCancel = ({ className = "", children, ...p }: any) => (
 );
 // Tooltip
 const TooltipProvider = ({ children }: any) => <>{children}</>;
-const Tooltip = ({ children }: any) => <>{children}</>;
+const Tooltip = ({ children, ...p }: any) => {
+  const [show, setShow] = React.useState(false);
+  return (
+    <span className="relative inline-flex" onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)} {...p}>
+      {React.Children.map(children, (c: any) => c)}
+      {show && <span className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 rounded bg-slate-800 text-white text-xs whitespace-nowrap pointer-events-none shadow-lg"
+        style={{minWidth: 'max-content'}}>{(React.Children.toArray(children) as any[]).find((c: any) => c?.type === TooltipContent)?.props?.children}</span>}
+    </span>
+  );
+};
 const TooltipTrigger = ({ asChild, children }: any) => <>{children}</>;
-const TooltipContent = ({ children }: any) => null; // simplified — no tooltip popup in standalone
+const TooltipContent = ({ children }: any) => null;
 // Dialog
 const Dialog = ({ open, onOpenChange, children }: any) => open ? <>{children}</> : null;
 const DialogContent = ({ className = "", children }: any) => (
