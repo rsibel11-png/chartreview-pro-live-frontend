@@ -503,9 +503,9 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
     setShowDialog(false);
     setPendingGroup(group);
     // Look for a facesheet doc in the same folder
-    const folderName = group.parts[0]?.folder_name || group.parts[0]?.folder || 'Unfiled';
+    const folderName = group.parts[0]?.folder_name || 'Unfiled';
     const facesheetDoc = (documents as any[]).find(
-      (d: any) => d.pii_facesheet && (d.folder_name || d.folder || 'Unfiled') === folderName
+      (d: any) => d.pii_facesheet && (d.folder_name || 'Unfiled') === folderName
     );
     if (facesheetDoc && facesheetDoc.facesheet_pii) {
       try {
