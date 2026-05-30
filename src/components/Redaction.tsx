@@ -417,23 +417,47 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
     setPendingGroup(null);
   };
 
-  // ── Batch flow (checked groups, sequential) ──────────────────────────────
+  // ── Batch flow: fire all jobs concurrently, poll simultaneously ─────────
   const handleRedactSelected = async () => {
     const queue = allGroups.filter(g => checkedKeys.has(g.key));
     if (!queue.length || running) return;
     setShowDialog(false);
     setRunning(true);
     setError(null);
-    for (let i = 0; i < queue.length; i++) {
-      const group = queue[i];
-      setStatusMsg(`Redacting ${i + 1} of ${queue.length} — ${group.label}…`);
+
+    // Track per-job status
+    const jobStatus: Record<string, 'pending' | 'done' | 'error'> = {};
+    queue.forEach(g => { jobStatus[g.key] = 'pending'; });
+
+    const updateStatus = () => {
+      const done  = Object.values(jobStatus).filter(s => s === 'done').length;
+      const total = queue.length;
+      setStatusMsg(`Redacting ${done} of ${total} complete…`);
+    };
+    updateStatus();
+
+    // Fire all groups concurrently, up to BATCH_CONCURRENCY at a time
+    const BATCH_CONCURRENCY = 3;
+    const errors: string[] = [];
+
+    const runGroup = async (group: CaseGroup) => {
       try {
         await executeGroup(group);
+        jobStatus[group.key] = 'done';
       } catch (err: any) {
-        setError(`Failed on "${group.label}": ${err.message}`);
-        // continue with next item even on error
+        jobStatus[group.key] = 'error';
+        errors.push(`"${group.label}": ${err.message}`);
       }
+      updateStatus();
+    };
+
+    // Chunk into groups of BATCH_CONCURRENCY
+    for (let i = 0; i < queue.length; i += BATCH_CONCURRENCY) {
+      const chunk = queue.slice(i, i + BATCH_CONCURRENCY);
+      await Promise.all(chunk.map(runGroup));
     }
+
+    if (errors.length) setError(errors.join(' | '));
     setRunning(false);
     setStatusMsg('');
   };
