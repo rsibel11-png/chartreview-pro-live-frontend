@@ -41,7 +41,7 @@ async function awsProxy(path: string, method = 'GET', data?: any): Promise<any> 
 
 // ── Inlined UI primitives (same as MedicalSummaries) ─────────────────────────
 function Button({ children, onClick, disabled, className = '', variant = 'default', size = 'default', title }: {
-  children: React.ReactNode; onClick?: () => void; disabled?: boolean;
+  children: React.ReactNode; onClick?: (e?: any) => void; disabled?: boolean;
   className?: string; variant?: string; size?: string; title?: string;
 }) {
   const base = 'inline-flex items-center justify-center rounded-md font-medium transition-colors focus:outline-none disabled:opacity-50 disabled:pointer-events-none';
