@@ -176,6 +176,7 @@ interface DocItem {
   title?: string;
   file_name?: string;
   folder_name?: string;
+  folder?: string;
   provider_name?: string;
   status?: string;
   is_redacted?: boolean;
@@ -346,6 +347,11 @@ function PiiModal({ open, onClose, onConfirm, caseLabel, initialValues }: {
               <span>Pre-filled from saved facesheet — review and adjust as needed.</span>
             </div>
           )}
+          {initialValues && Object.values(initialValues).some((v: any) => v) && (
+            <div className="mb-3 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
+              ✓ Patient info pre-filled from admission record — review and adjust as needed.
+            </div>
+          )}
           <p className="text-sm text-slate-600 mb-4">
             PII is detected automatically. Entering known patient details below improves accuracy — fields left blank are still auto-detected.
           </p>
@@ -430,7 +436,7 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
 
   const documentsByFolder: Record<string, DocItem[]> = (documents as DocItem[]).reduce(
     (acc: Record<string, DocItem[]>, doc: DocItem) => {
-      const folder = doc.folder_name || 'Unfiled';
+      const folder = ((doc.folder || doc.folder_name || '').trim()) || 'Unfiled';
       if (!acc[folder]) acc[folder] = [];
       acc[folder].push(doc);
       return acc;
@@ -502,22 +508,15 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
     if (running) return;
     setShowDialog(false);
     setPendingGroup(group);
-    // Look for a facesheet doc in the same folder
-    const folderName = group.parts[0]?.folder_name || 'Unfiled';
-    const facesheetDoc = (documents as any[]).find(
-      (d: any) => d.pii_facesheet && (d.folder_name || 'Unfiled') === folderName
-    );
-    if (facesheetDoc && facesheetDoc.facesheet_pii) {
-      try {
-        const parsed = typeof facesheetDoc.facesheet_pii === 'string'
-          ? JSON.parse(facesheetDoc.facesheet_pii)
-          : facesheetDoc.facesheet_pii;
-        setFacesheetPii(parsed);
-      } catch { setFacesheetPii(undefined); }
-    } else {
-      setFacesheetPii(undefined);
-    }
+    setFacesheetPii(undefined);
     setPiiModalOpen(true);
+    // Fetch folder PII from backend (written by processWorker when admission record detected)
+    const folderName = ((group.parts[0]?.folder || group.parts[0]?.folder_name || '').trim()) || 'Unfiled';
+    if (folderName && folderName !== 'Unfiled') {
+      awsProxy(`/folders/${encodeURIComponent(folderName)}/pii`)
+        .then((pii: any) => { if (pii && !pii.error) setFacesheetPii(pii); })
+        .catch(() => {}); // modal already open — silently ignore if no record exists
+    }
   };
 
   const executeRedactCase = async (group: CaseGroup, userPii: string[]) => {
@@ -623,10 +622,20 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
   };
 
   const handleRedactSelected = () => {
-    const queue = allGroups.filter(g => checkedKeys.has(g.key));
+    const queue = allGroups.filter((g: CaseGroup) => checkedKeys.has(g.key));
     if (!queue.length || running) return;
     setShowDialog(false);
     setPendingGroup(null);
+    setFacesheetPii(undefined);
+    // If all selected docs share one folder, fetch its PII
+    const folders = [...new Set(queue.flatMap((g: CaseGroup) =>
+      g.parts.map((p: any) => ((p.folder || p.folder_name || '').trim()) || 'Unfiled')
+    ))];
+    if (folders.length === 1 && folders[0] !== 'Unfiled') {
+      awsProxy(`/folders/${encodeURIComponent(folders[0])}/pii`)
+        .then((pii: any) => { if (pii && !pii.error) setFacesheetPii(pii); })
+        .catch(() => {});
+    }
     setPendingBatch(queue);
     setPiiModalOpen(true);
   };
