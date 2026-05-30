@@ -811,7 +811,7 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
                             return next;
                           });
                         }}
-                        onClick={e => e.stopPropagation()}
+                        onClick={(e: any) => e.stopPropagation()}
                         className="w-4 h-4 rounded accent-blue-600 cursor-pointer shrink-0"
                       />
                       <Folder className="w-4 h-4 text-blue-500" />
@@ -837,7 +837,7 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
                             type="checkbox"
                             checked={checkedKeys.has(group.key)}
                             onChange={() => toggleGroup(group.key)}
-                            onClick={e => e.stopPropagation()}
+                            onClick={(e: any) => e.stopPropagation()}
                             className="w-4 h-4 rounded accent-blue-600 cursor-pointer shrink-0"
                           />
                           <FileIcon className="w-4 h-4 text-slate-400 shrink-0" />
@@ -857,7 +857,7 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
                             variant="dark"
                             size="sm"
                             disabled={running}
-                            onClick={e => { e.stopPropagation(); handleRedactCase(group); }}
+                            onClick={(e: any) => { e.stopPropagation(); handleRedactCase(group); }}
                             className="gap-1.5 shrink-0"
                           >
                             <ShieldOff className="w-3.5 h-3.5" />
