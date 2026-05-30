@@ -161,6 +161,12 @@ const Download = ({ className = '' }) => (
       d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
   </svg>
 );
+const ClipboardList = ({ className = '' }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+  </svg>
+);
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface DocItem {
@@ -170,7 +176,6 @@ interface DocItem {
   title?: string;
   file_name?: string;
   folder_name?: string;
-  folder?: string;
   provider_name?: string;
   status?: string;
   is_redacted?: boolean;
@@ -317,55 +322,13 @@ function buildUserPiiArray(form: PiiFormState): string[] {
   return Array.from(new Set(values.filter((v: string) => v.length >= 2)));
 }
 
-
-// ── Parse PII from extracted_text — searches for any matching pattern ─────────
-function parsePiiFromText(text: string): PiiFormState {
-  const t = text || '';
-  const find = (patterns: RegExp[]): string => {
-    for (const p of patterns) { const m = p.exec(t); if (m && m[1]) return m[1].trim(); }
-    return '';
-  };
-  const name     = find([/^NAME:\s*([A-Z][A-Z,'. -]{2,40})/m, /^Patient:\s*([A-Za-z][A-Za-z,'. -]{2,40})/m,
-                          /PATIENT\s+NAME[:\s]+([A-Z][A-Z,'. -]{2,40})/i]);
-  const dob      = find([/\bDOB[:\s]+([\d]{1,2}\/[\d]{1,2}\/[\d]{2,4})/,
-                          /DATE\s+OF\s+BIRTH[:\s]+([\d]{1,2}\/[\d]{1,2}\/[\d]{2,4})/i]);
-  const ssn      = find([/SS#:\s*([Xx0-9-]{9,11})/, /SSN[:#\s]+([Xx0-9-]{9,11})/i]);
-  const phone    = find([/PHONE#[:\s]+([\(\d][\d().\- ]{8,})/,
-                          /PH[:\s]+([\(\d][\d().\- ]{8,})(?=[\s\n])/,
-                          /PHONE[:\s]+([\(\d][\d().\- ]{8,})/i]);
-  const mrn      = find([/UNIT\s*RCRD\s*#[:\s]+([A-Z0-9]{5,})/, /MRN[:\s]+([A-Z0-9]{5,})/i,
-                          /ACCOUNT\s*#[:\s]+([A-Z0-9]{6,})/i]);
-  const streetM  = t.match(/(?:STREET|ADDRESS)[:\s]+([\w][\w .]+(?:AVE|ST|BLVD|DR|RD|LN|WAY|CT|TRAIL|PKWY|CIR|PL|LOOP|RANCH)[\w .]*)/i);
-  const street   = streetM ? streetM[1].trim() : '';
-  const cszM     = t.match(/C\/S\/Z[P]?:\s*([A-Z][A-Z ]+),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)/);
-  const city     = cszM ? cszM[1].trim() : '';
-  const stateZip = cszM ? `${cszM[2]} ${cszM[3]}` : '';
-  const spouseM  = t.match(/SPOUSE\s*(?:\/\s*NOK[\s\S]{0,10})?\n([A-Z][A-Z, ]{3,40})\n/);
-  const spouse   = spouseM ? spouseM[1].trim() : '';
-  const empM     = t.match(/(?:PATIENT\s+)?EMPLOYER[:\n\s]+([A-Z][A-Z &,.]{3,40})\n/i);
-  const employer = (empM && !/UNEMPLOYED|NONE|N\/A/i.test(empM[1])) ? empM[1].trim() : '';
-  return { patientName: name, dob, ssn, phone, mrn, street, city, stateZip, spouse, employer };
-}
-
-// Merge two PiiFormState objects — only fill empty fields from src
-function mergePii(base: PiiFormState, incoming: PiiFormState): PiiFormState {
-  const result = { ...base };
-  for (const k of Object.keys(incoming) as (keyof PiiFormState)[]) {
-    if (!result[k] && incoming[k]) result[k] = incoming[k];
-  }
-  return result;
-}
-
-function piiIsComplete(p: PiiFormState): boolean {
-  return !!(p.patientName && p.dob && p.street);
-}
-
 function PiiModal({ open, onClose, onConfirm, caseLabel, initialValues }: {
   open: boolean; onClose: () => void; onConfirm: (piiValues: string[]) => void;
   caseLabel: string; initialValues?: PiiFormState;
 }) {
   const [form, setForm] = React.useState<PiiFormState>(initialValues || {});
   const setF = (key: string, val: string) => setForm(prev => ({ ...prev, [key]: val }));
+  // Re-seed when initialValues change (new facesheet loaded)
   React.useEffect(() => { if (initialValues) setForm(initialValues); }, [JSON.stringify(initialValues)]);
   if (!open) return null;
   return (
@@ -377,9 +340,10 @@ function PiiModal({ open, onClose, onConfirm, caseLabel, initialValues }: {
           <p className="text-sm text-slate-500 mt-0.5 truncate">{caseLabel}</p>
         </div>
         <div className="px-6 py-4 overflow-y-auto flex-1">
-          {initialValues && Object.values(initialValues).some(v => v) && (
-            <div className="mb-3 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
-              ✓ Pre-filled from patient records in this folder — review and adjust as needed.
+          {initialValues && Object.values(initialValues).some((v: string) => v) && (
+            <div className="flex items-center gap-2 mb-3 px-3 py-2 bg-green-50 border border-green-200 rounded-lg text-xs text-green-800">
+              <ClipboardList className="w-4 h-4 text-green-600 shrink-0" />
+              <span>Pre-filled from saved facesheet — review and adjust as needed.</span>
             </div>
           )}
           <p className="text-sm text-slate-600 mb-4">
@@ -401,7 +365,7 @@ function PiiModal({ open, onClose, onConfirm, caseLabel, initialValues }: {
         </div>
         <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
           <button onClick={onClose} className="px-4 py-2 text-sm rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-slate-50">Cancel</button>
-          <button onClick={() => { onConfirm(buildUserPiiArray(form)); setForm({}); }}
+          <button onClick={() => { onConfirm(buildUserPiiArray(form)); setForm(initialValues || {}); }}
             className="px-4 py-2 text-sm rounded-md bg-blue-600 text-white font-medium hover:bg-blue-700">Redact Document</button>
         </div>
       </div>
@@ -428,9 +392,9 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [piiModalOpen, setPiiModalOpen]   = useState(false);
   const [pendingGroup, setPendingGroup]   = useState<CaseGroup | null>(null);
+  const [facesheetPii, setFacesheetPii]   = useState<Record<string, string> | undefined>(undefined);
   const [checkedKeys, setCheckedKeys]     = useState<Set<string>>(new Set());
   const [pendingBatch, setPendingBatch]   = useState<CaseGroup[]>([]);
-  const [prefillPii,   setPrefillPii]     = useState<PiiFormState | undefined>(undefined);
 
   // ── Fetch all docs ───────────────────────────────────────────────────────
   const { data: documents = [], isLoading: docsLoading } = useQuery({
@@ -466,7 +430,7 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
 
   const documentsByFolder: Record<string, DocItem[]> = (documents as DocItem[]).reduce(
     (acc: Record<string, DocItem[]>, doc: DocItem) => {
-      const folder = (doc.folder || doc.folder_name || 'Unfiled').trim() || 'Unfiled';
+      const folder = doc.folder_name || 'Unfiled';
       if (!acc[folder]) acc[folder] = [];
       acc[folder].push(doc);
       return acc;
@@ -538,29 +502,22 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
     if (running) return;
     setShowDialog(false);
     setPendingGroup(group);
-    setPrefillPii(undefined);
-    setPiiModalOpen(true);
-    // Read PII from localStorage (written by Library when facesheet is set)
-    const folderName = (group.parts[0]?.folder || group.parts[0]?.folder_name || '').trim();
-    try {
-      const stored = localStorage.getItem(`crp_pii_${folderName}`);
-      if (stored) {
-        const pii = JSON.parse(stored) as PiiFormState;
-        if (Object.values(pii).some(v => v)) { setPrefillPii(pii); return; }
-      }
-    } catch (_) {}
-    // Fallback: scan first doc in folder for PII (no facesheet set yet)
-    const firstDoc = (documents as DocItem[]).find(
-      d => (d.folder || d.folder_name || '').trim() === folderName
+    // Look for a facesheet doc in the same folder
+    const folderName = group.parts[0]?.folder_name || 'Unfiled';
+    const facesheetDoc = (documents as any[]).find(
+      (d: any) => d.pii_facesheet && (d.folder_name || 'Unfiled') === folderName
     );
-    if (firstDoc?.id) {
-      awsProxy(`/documents/${firstDoc.id}`, 'GET').then((doc: any) => {
-        if (doc?.extracted_text) {
-          const pii = parsePiiFromText(doc.extracted_text);
-          if (Object.values(pii).some(v => v)) setPrefillPii(pii);
-        }
-      }).catch(() => {});
+    if (facesheetDoc && facesheetDoc.facesheet_pii) {
+      try {
+        const parsed = typeof facesheetDoc.facesheet_pii === 'string'
+          ? JSON.parse(facesheetDoc.facesheet_pii)
+          : facesheetDoc.facesheet_pii;
+        setFacesheetPii(parsed);
+      } catch { setFacesheetPii(undefined); }
+    } else {
+      setFacesheetPii(undefined);
     }
+    setPiiModalOpen(true);
   };
 
   const executeRedactCase = async (group: CaseGroup, userPii: string[]) => {
@@ -962,17 +919,16 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
       </Dialog>
       <PiiModal
         open={piiModalOpen}
-        initialValues={prefillPii}
+        initialValues={facesheetPii}
         caseLabel={
           pendingBatch.length > 1
             ? `${pendingBatch.length} documents selected`
             : pendingGroup?.label || pendingBatch[0]?.label || ''
         }
-        onClose={() => {
+        onClose={() => { setFacesheetPii(undefined);
           setPiiModalOpen(false);
           setPendingGroup(null);
           setPendingBatch([]);
-          setPrefillPii(undefined);
           setShowDialog(true);
         }}
         onConfirm={async (userPii: string[]) => {
