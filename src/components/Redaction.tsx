@@ -161,6 +161,12 @@ const Download = ({ className = '' }) => (
       d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
   </svg>
 );
+const ClipboardList = ({ className = '' }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+      d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+  </svg>
+);
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface DocItem {
@@ -316,11 +322,14 @@ function buildUserPiiArray(form: PiiFormState): string[] {
   return Array.from(new Set(values.filter((v: string) => v.length >= 2)));
 }
 
-function PiiModal({ open, onClose, onConfirm, caseLabel }: {
-  open: boolean; onClose: () => void; onConfirm: (piiValues: string[]) => void; caseLabel: string;
+function PiiModal({ open, onClose, onConfirm, caseLabel, initialValues }: {
+  open: boolean; onClose: () => void; onConfirm: (piiValues: string[]) => void;
+  caseLabel: string; initialValues?: PiiFormState;
 }) {
-  const [form, setForm] = React.useState<PiiFormState>({});
+  const [form, setForm] = React.useState<PiiFormState>(initialValues || {});
   const setF = (key: string, val: string) => setForm(prev => ({ ...prev, [key]: val }));
+  // Re-seed when initialValues change (new facesheet loaded)
+  React.useEffect(() => { if (initialValues) setForm(initialValues); }, [JSON.stringify(initialValues)]);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -331,6 +340,12 @@ function PiiModal({ open, onClose, onConfirm, caseLabel }: {
           <p className="text-sm text-slate-500 mt-0.5 truncate">{caseLabel}</p>
         </div>
         <div className="px-6 py-4 overflow-y-auto flex-1">
+          {initialValues && Object.values(initialValues).some((v: string) => v) && (
+            <div className="flex items-center gap-2 mb-3 px-3 py-2 bg-green-50 border border-green-200 rounded-lg text-xs text-green-800">
+              <ClipboardList className="w-4 h-4 text-green-600 shrink-0" />
+              <span>Pre-filled from saved facesheet — review and adjust as needed.</span>
+            </div>
+          )}
           <p className="text-sm text-slate-600 mb-4">
             PII is detected automatically. Entering known patient details below improves accuracy — fields left blank are still auto-detected.
           </p>
@@ -350,7 +365,7 @@ function PiiModal({ open, onClose, onConfirm, caseLabel }: {
         </div>
         <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
           <button onClick={onClose} className="px-4 py-2 text-sm rounded-md border border-slate-300 bg-white text-slate-700 hover:bg-slate-50">Cancel</button>
-          <button onClick={() => { onConfirm(buildUserPiiArray(form)); setForm({}); }}
+          <button onClick={() => { onConfirm(buildUserPiiArray(form)); setForm(initialValues || {}); }}
             className="px-4 py-2 text-sm rounded-md bg-blue-600 text-white font-medium hover:bg-blue-700">Redact Document</button>
         </div>
       </div>
@@ -377,6 +392,7 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [piiModalOpen, setPiiModalOpen]   = useState(false);
   const [pendingGroup, setPendingGroup]   = useState<CaseGroup | null>(null);
+  const [facesheetPii, setFacesheetPii]   = useState<Record<string, string> | undefined>(undefined);
   const [checkedKeys, setCheckedKeys]     = useState<Set<string>>(new Set());
   const [pendingBatch, setPendingBatch]   = useState<CaseGroup[]>([]);
 
@@ -486,6 +502,21 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
     if (running) return;
     setShowDialog(false);
     setPendingGroup(group);
+    // Look for a facesheet doc in the same folder
+    const folderName = group.parts[0]?.folder_name || group.parts[0]?.folder || 'Unfiled';
+    const facesheetDoc = (documents as any[]).find(
+      (d: any) => d.pii_facesheet && (d.folder_name || d.folder || 'Unfiled') === folderName
+    );
+    if (facesheetDoc && facesheetDoc.facesheet_pii) {
+      try {
+        const parsed = typeof facesheetDoc.facesheet_pii === 'string'
+          ? JSON.parse(facesheetDoc.facesheet_pii)
+          : facesheetDoc.facesheet_pii;
+        setFacesheetPii(parsed);
+      } catch { setFacesheetPii(undefined); }
+    } else {
+      setFacesheetPii(undefined);
+    }
     setPiiModalOpen(true);
   };
 
@@ -888,12 +919,13 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
       </Dialog>
       <PiiModal
         open={piiModalOpen}
+        initialValues={facesheetPii}
         caseLabel={
           pendingBatch.length > 1
             ? `${pendingBatch.length} documents selected`
             : pendingGroup?.label || pendingBatch[0]?.label || ''
         }
-        onClose={() => {
+        onClose={() => { setFacesheetPii(undefined);
           setPiiModalOpen(false);
           setPendingGroup(null);
           setPendingBatch([]);
