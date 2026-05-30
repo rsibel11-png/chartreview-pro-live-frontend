@@ -619,12 +619,9 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
       }
       return pii;
     },
-    onSuccess: (pii: any, { doc }: any) => {
+    onSuccess: (_pii: any, { doc }: any) => {
       queryClient.invalidateQueries({ queryKey: ['aws-documents'] });
       toast.success('Facesheet saved: ' + (doc.title || doc.original_filename || doc.id));
-      // Store PII in localStorage so Redact can read it instantly, keyed by folder
-      const folderKey = (doc.folder || doc.folder_name || 'Unfiled').trim();
-      try { localStorage.setItem(`crp_pii_${folderKey}`, JSON.stringify(pii)); } catch (_) {}
     },
     onError: (err: any) => toast.error('Failed to set facesheet: ' + err.message),
   });
