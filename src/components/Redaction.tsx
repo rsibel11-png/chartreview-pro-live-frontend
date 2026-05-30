@@ -540,25 +540,27 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
     setPendingGroup(group);
     setPrefillPii(undefined);
     setPiiModalOpen(true);
-    // Scan all parts across ALL docs in this folder to find PII
+    // Read PII from localStorage (written by Library when facesheet is set)
     const folderName = (group.parts[0]?.folder || group.parts[0]?.folder_name || '').trim();
-    const folderDocs = (documents as DocItem[]).filter(
+    try {
+      const stored = localStorage.getItem(`crp_pii_${folderName}`);
+      if (stored) {
+        const pii = JSON.parse(stored) as PiiFormState;
+        if (Object.values(pii).some(v => v)) { setPrefillPii(pii); return; }
+      }
+    } catch (_) {}
+    // Fallback: scan first doc in folder for PII (no facesheet set yet)
+    const firstDoc = (documents as DocItem[]).find(
       d => (d.folder || d.folder_name || '').trim() === folderName
     );
-    (async () => {
-      let accumulated: PiiFormState = {};
-      for (const doc of folderDocs) {
-        if (piiIsComplete(accumulated)) break;
-        try {
-          const fetched: any = await awsProxy(`/documents/${doc.id}`, 'GET');
-          if (fetched?.extracted_text) {
-            const parsed = parsePiiFromText(fetched.extracted_text);
-            accumulated = mergePii(accumulated, parsed);
-          }
-        } catch (_) {}
-      }
-      if (Object.values(accumulated).some(v => v)) setPrefillPii(accumulated);
-    })();
+    if (firstDoc?.id) {
+      awsProxy(`/documents/${firstDoc.id}`, 'GET').then((doc: any) => {
+        if (doc?.extracted_text) {
+          const pii = parsePiiFromText(doc.extracted_text);
+          if (Object.values(pii).some(v => v)) setPrefillPii(pii);
+        }
+      }).catch(() => {});
+    }
   };
 
   const executeRedactCase = async (group: CaseGroup, userPii: string[]) => {
