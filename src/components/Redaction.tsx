@@ -170,6 +170,7 @@ interface DocItem {
   title?: string;
   file_name?: string;
   folder_name?: string;
+  folder?: string;
   provider_name?: string;
   status?: string;
   is_redacted?: boolean;
@@ -317,28 +318,46 @@ function buildUserPiiArray(form: PiiFormState): string[] {
 }
 
 
-// ── Parse PII from extracted_text ────────────────────────────────────────────
+// ── Parse PII from extracted_text — searches for any matching pattern ─────────
 function parsePiiFromText(text: string): PiiFormState {
   const t = text || '';
   const find = (patterns: RegExp[]): string => {
     for (const p of patterns) { const m = p.exec(t); if (m && m[1]) return m[1].trim(); }
     return '';
   };
-  const name     = find([/^NAME:\s*([A-Z][A-Z,'. -]{2,40})/m, /^Patient:\s*([A-Za-z][A-Za-z,'. -]{2,40})/m]);
-  const dob      = find([/\bDOB[:\s]+([\d]{1,2}\/[\d]{1,2}\/[\d]{2,4})/, /DOB:\s*([\d]{1,2}\/[\d]{1,2}\/[\d]{2,4})/i]);
+  const name     = find([/^NAME:\s*([A-Z][A-Z,'. -]{2,40})/m, /^Patient:\s*([A-Za-z][A-Za-z,'. -]{2,40})/m,
+                          /PATIENT\s+NAME[:\s]+([A-Z][A-Z,'. -]{2,40})/i]);
+  const dob      = find([/\bDOB[:\s]+([\d]{1,2}\/[\d]{1,2}\/[\d]{2,4})/,
+                          /DATE\s+OF\s+BIRTH[:\s]+([\d]{1,2}\/[\d]{1,2}\/[\d]{2,4})/i]);
   const ssn      = find([/SS#:\s*([Xx0-9-]{9,11})/, /SSN[:#\s]+([Xx0-9-]{9,11})/i]);
-  const phone    = find([/PHONE#[:\s]+([\(\d][\d().\- ]{8,})/, /PH[:\s]+([\(\d][\d().\- ]{8,})(?=[\s\n])/]);
-  const mrn      = find([/UNIT\s*RCRD\s*#[:\s]+([A-Z0-9]{5,})/, /MRN[:\s]+([A-Z0-9]{5,})/i]);
-  const streetM  = t.match(/STREET:\s+([\w][\w .]+(?:AVE|ST|BLVD|DR|RD|LN|WAY|CT|TRAIL|PKWY|CIR|PL|LOOP|RANCH)[\w .]*)/i);
+  const phone    = find([/PHONE#[:\s]+([\(\d][\d().\- ]{8,})/,
+                          /PH[:\s]+([\(\d][\d().\- ]{8,})(?=[\s\n])/,
+                          /PHONE[:\s]+([\(\d][\d().\- ]{8,})/i]);
+  const mrn      = find([/UNIT\s*RCRD\s*#[:\s]+([A-Z0-9]{5,})/, /MRN[:\s]+([A-Z0-9]{5,})/i,
+                          /ACCOUNT\s*#[:\s]+([A-Z0-9]{6,})/i]);
+  const streetM  = t.match(/(?:STREET|ADDRESS)[:\s]+([\w][\w .]+(?:AVE|ST|BLVD|DR|RD|LN|WAY|CT|TRAIL|PKWY|CIR|PL|LOOP|RANCH)[\w .]*)/i);
   const street   = streetM ? streetM[1].trim() : '';
   const cszM     = t.match(/C\/S\/Z[P]?:\s*([A-Z][A-Z ]+),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)/);
   const city     = cszM ? cszM[1].trim() : '';
   const stateZip = cszM ? `${cszM[2]} ${cszM[3]}` : '';
-  const spouseM  = t.match(/SPOUSE\s*\/\s*NOK[\s\S]{0,10}\n([A-Z][A-Z, ]+)\n/);
+  const spouseM  = t.match(/SPOUSE\s*(?:\/\s*NOK[\s\S]{0,10})?\n([A-Z][A-Z, ]{3,40})\n/);
   const spouse   = spouseM ? spouseM[1].trim() : '';
-  const empM     = t.match(/PATIENT\s+EMPLOYER\n([A-Z][A-Z &,.]+)\n/);
-  const employer = (empM && !/UNEMPLOYED|NONE/i.test(empM[1])) ? empM[1].trim() : '';
+  const empM     = t.match(/(?:PATIENT\s+)?EMPLOYER[:\n\s]+([A-Z][A-Z &,.]{3,40})\n/i);
+  const employer = (empM && !/UNEMPLOYED|NONE|N\/A/i.test(empM[1])) ? empM[1].trim() : '';
   return { patientName: name, dob, ssn, phone, mrn, street, city, stateZip, spouse, employer };
+}
+
+// Merge two PiiFormState objects — only fill empty fields from src
+function mergePii(base: PiiFormState, incoming: PiiFormState): PiiFormState {
+  const result = { ...base };
+  for (const k of Object.keys(incoming) as (keyof PiiFormState)[]) {
+    if (!result[k] && incoming[k]) result[k] = incoming[k];
+  }
+  return result;
+}
+
+function piiIsComplete(p: PiiFormState): boolean {
+  return !!(p.patientName && p.dob && p.street);
 }
 
 function PiiModal({ open, onClose, onConfirm, caseLabel, initialValues }: {
@@ -360,7 +379,7 @@ function PiiModal({ open, onClose, onConfirm, caseLabel, initialValues }: {
         <div className="px-6 py-4 overflow-y-auto flex-1">
           {initialValues && Object.values(initialValues).some(v => v) && (
             <div className="mb-3 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
-              ✓ Pre-filled from patient admission record — review and adjust as needed.
+              ✓ Pre-filled from patient records in this folder — review and adjust as needed.
             </div>
           )}
           <p className="text-sm text-slate-600 mb-4">
@@ -447,7 +466,7 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
 
   const documentsByFolder: Record<string, DocItem[]> = (documents as DocItem[]).reduce(
     (acc: Record<string, DocItem[]>, doc: DocItem) => {
-      const folder = doc.folder_name || 'Unfiled';
+      const folder = (doc.folder || doc.folder_name || 'Unfiled').trim() || 'Unfiled';
       if (!acc[folder]) acc[folder] = [];
       acc[folder].push(doc);
       return acc;
@@ -521,15 +540,25 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
     setPendingGroup(group);
     setPrefillPii(undefined);
     setPiiModalOpen(true);
-    const firstPart = group.parts[0];
-    if (firstPart?.id) {
-      awsProxy(`/documents/${firstPart.id}`, 'GET').then((doc: any) => {
-        if (doc?.extracted_text) {
-          const parsed = parsePiiFromText(doc.extracted_text);
-          if (Object.values(parsed).some(v => v)) setPrefillPii(parsed);
-        }
-      }).catch(() => {});
-    }
+    // Scan all parts across ALL docs in this folder to find PII
+    const folderName = (group.parts[0]?.folder || group.parts[0]?.folder_name || '').trim();
+    const folderDocs = (documents as DocItem[]).filter(
+      d => (d.folder || d.folder_name || '').trim() === folderName
+    );
+    (async () => {
+      let accumulated: PiiFormState = {};
+      for (const doc of folderDocs) {
+        if (piiIsComplete(accumulated)) break;
+        try {
+          const fetched: any = await awsProxy(`/documents/${doc.id}`, 'GET');
+          if (fetched?.extracted_text) {
+            const parsed = parsePiiFromText(fetched.extracted_text);
+            accumulated = mergePii(accumulated, parsed);
+          }
+        } catch (_) {}
+      }
+      if (Object.values(accumulated).some(v => v)) setPrefillPii(accumulated);
+    })();
   };
 
   const executeRedactCase = async (group: CaseGroup, userPii: string[]) => {
