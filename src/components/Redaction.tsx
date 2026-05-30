@@ -316,11 +316,38 @@ function buildUserPiiArray(form: PiiFormState): string[] {
   return Array.from(new Set(values.filter((v: string) => v.length >= 2)));
 }
 
-function PiiModal({ open, onClose, onConfirm, caseLabel }: {
-  open: boolean; onClose: () => void; onConfirm: (piiValues: string[]) => void; caseLabel: string;
+
+// ── Parse PII from extracted_text ────────────────────────────────────────────
+function parsePiiFromText(text: string): PiiFormState {
+  const t = text || '';
+  const find = (patterns: RegExp[]): string => {
+    for (const p of patterns) { const m = p.exec(t); if (m && m[1]) return m[1].trim(); }
+    return '';
+  };
+  const name     = find([/^NAME:\s*([A-Z][A-Z,'. -]{2,40})/m, /^Patient:\s*([A-Za-z][A-Za-z,'. -]{2,40})/m]);
+  const dob      = find([/\bDOB[:\s]+([\d]{1,2}\/[\d]{1,2}\/[\d]{2,4})/, /DOB:\s*([\d]{1,2}\/[\d]{1,2}\/[\d]{2,4})/i]);
+  const ssn      = find([/SS#:\s*([Xx0-9-]{9,11})/, /SSN[:#\s]+([Xx0-9-]{9,11})/i]);
+  const phone    = find([/PHONE#[:\s]+([\(\d][\d().\- ]{8,})/, /PH[:\s]+([\(\d][\d().\- ]{8,})(?=[\s\n])/]);
+  const mrn      = find([/UNIT\s*RCRD\s*#[:\s]+([A-Z0-9]{5,})/, /MRN[:\s]+([A-Z0-9]{5,})/i]);
+  const streetM  = t.match(/STREET:\s+([\w][\w .]+(?:AVE|ST|BLVD|DR|RD|LN|WAY|CT|TRAIL|PKWY|CIR|PL|LOOP|RANCH)[\w .]*)/i);
+  const street   = streetM ? streetM[1].trim() : '';
+  const cszM     = t.match(/C\/S\/Z[P]?:\s*([A-Z][A-Z ]+),\s*([A-Z]{2})\s+(\d{5}(?:-\d{4})?)/);
+  const city     = cszM ? cszM[1].trim() : '';
+  const stateZip = cszM ? `${cszM[2]} ${cszM[3]}` : '';
+  const spouseM  = t.match(/SPOUSE\s*\/\s*NOK[\s\S]{0,10}\n([A-Z][A-Z, ]+)\n/);
+  const spouse   = spouseM ? spouseM[1].trim() : '';
+  const empM     = t.match(/PATIENT\s+EMPLOYER\n([A-Z][A-Z &,.]+)\n/);
+  const employer = (empM && !/UNEMPLOYED|NONE/i.test(empM[1])) ? empM[1].trim() : '';
+  return { patientName: name, dob, ssn, phone, mrn, street, city, stateZip, spouse, employer };
+}
+
+function PiiModal({ open, onClose, onConfirm, caseLabel, initialValues }: {
+  open: boolean; onClose: () => void; onConfirm: (piiValues: string[]) => void;
+  caseLabel: string; initialValues?: PiiFormState;
 }) {
-  const [form, setForm] = React.useState<PiiFormState>({});
+  const [form, setForm] = React.useState<PiiFormState>(initialValues || {});
   const setF = (key: string, val: string) => setForm(prev => ({ ...prev, [key]: val }));
+  React.useEffect(() => { if (initialValues) setForm(initialValues); }, [JSON.stringify(initialValues)]);
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -331,6 +358,11 @@ function PiiModal({ open, onClose, onConfirm, caseLabel }: {
           <p className="text-sm text-slate-500 mt-0.5 truncate">{caseLabel}</p>
         </div>
         <div className="px-6 py-4 overflow-y-auto flex-1">
+          {initialValues && Object.values(initialValues).some(v => v) && (
+            <div className="mb-3 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
+              ✓ Pre-filled from patient admission record — review and adjust as needed.
+            </div>
+          )}
           <p className="text-sm text-slate-600 mb-4">
             PII is detected automatically. Entering known patient details below improves accuracy — fields left blank are still auto-detected.
           </p>
@@ -379,6 +411,7 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
   const [pendingGroup, setPendingGroup]   = useState<CaseGroup | null>(null);
   const [checkedKeys, setCheckedKeys]     = useState<Set<string>>(new Set());
   const [pendingBatch, setPendingBatch]   = useState<CaseGroup[]>([]);
+  const [prefillPii,   setPrefillPii]     = useState<PiiFormState | undefined>(undefined);
 
   // ── Fetch all docs ───────────────────────────────────────────────────────
   const { data: documents = [], isLoading: docsLoading } = useQuery({
@@ -486,7 +519,17 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
     if (running) return;
     setShowDialog(false);
     setPendingGroup(group);
+    setPrefillPii(undefined);
     setPiiModalOpen(true);
+    const firstPart = group.parts[0];
+    if (firstPart?.id) {
+      awsProxy(`/documents/${firstPart.id}`, 'GET').then((doc: any) => {
+        if (doc?.extracted_text) {
+          const parsed = parsePiiFromText(doc.extracted_text);
+          if (Object.values(parsed).some(v => v)) setPrefillPii(parsed);
+        }
+      }).catch(() => {});
+    }
   };
 
   const executeRedactCase = async (group: CaseGroup, userPii: string[]) => {
@@ -888,6 +931,7 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
       </Dialog>
       <PiiModal
         open={piiModalOpen}
+        initialValues={prefillPii}
         caseLabel={
           pendingBatch.length > 1
             ? `${pendingBatch.length} documents selected`
@@ -897,6 +941,7 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
           setPiiModalOpen(false);
           setPendingGroup(null);
           setPendingBatch([]);
+          setPrefillPii(undefined);
           setShowDialog(true);
         }}
         onConfirm={async (userPii: string[]) => {
