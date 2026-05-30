@@ -37,7 +37,6 @@ import {
   CheckCircle2,
   Eye,
   RefreshCw,
-  ClipboardList,
 } from "lucide-react";
 
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || "";
@@ -115,18 +114,9 @@ const AlertDialogCancel = ({ className = "", children, ...p }: any) => (
 );
 // Tooltip
 const TooltipProvider = ({ children }: any) => <>{children}</>;
-const Tooltip = ({ children, ...p }: any) => {
-  const [show, setShow] = React.useState(false);
-  return (
-    <span className="relative inline-flex" onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)} {...p}>
-      {React.Children.map(children, (c: any) => c)}
-      {show && <span className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 rounded bg-slate-800 text-white text-xs whitespace-nowrap pointer-events-none shadow-lg"
-        style={{minWidth: 'max-content'}}>{(React.Children.toArray(children) as any[]).find((c: any) => c?.type === TooltipContent)?.props?.children}</span>}
-    </span>
-  );
-};
+const Tooltip = ({ children }: any) => <>{children}</>;
 const TooltipTrigger = ({ asChild, children }: any) => <>{children}</>;
-const TooltipContent = ({ children }: any) => null;
+const TooltipContent = ({ children }: any) => null; // simplified — no tooltip popup in standalone
 // Dialog
 const Dialog = ({ open, onOpenChange, children }: any) => open ? <>{children}</> : null;
 const DialogContent = ({ className = "", children }: any) => (
@@ -178,43 +168,6 @@ const _getPdfjs = () => new Promise((resolve, reject) => {
 
 // =============================================================================
 // =============================================================================
-
-// ── Facesheet PII extraction (client-side) ─────────────────────────────────
-function parseFacesheetPii(extractedText: string): Record<string, string> {
-  const t = extractedText || '';
-  const find = (pats: RegExp[]): string => {
-    for (const p of pats) { p.lastIndex = 0; const m = p.exec(t); if (m && m[1]) return m[1].trim(); }
-    return '';
-  };
-  const name = find([
-    /(?:PATIENT|Patient)\s*[:|]\s*([A-Z][A-Z\-,'. ]{2,40})/,
-    /^NAME\s*[:|]\s*([A-Z][A-Z\-,'. ]{2,40})/m,
-    /CLAIMANT\s*[:|]\s*([A-Za-z][A-Za-z\-,'. ]+)/i,
-  ]);
-  const dob = find([
-    /(?:DOB|D\.O\.B\.|DATE\s*OF\s*BIRTH|Birth\s*Date)\s*[:|]\s*([\d]{1,2}[\/\-][\d]{1,2}[\/\-][\d]{2,4})/i,
-  ]);
-  const ssn = find([ /(\d{3}-\d{2}-\d{4})/, /SSN\s*[:|]?\s*(\d{9})/i ]);
-  const phone = find([
-    /(?:PHONE#?|Patient\s*[Pp]hone|PH(?:ONE)?\s*#?|TEL(?:EPHONE)?)\s*[:|]?\s*([\d()\-. ]{10,})/i,
-    /(\d{3}-\d{3}-\d{4})/,
-  ]);
-  const mrn = find([
-    /(?:MRN#?|PRN\s*[:|]?|ACCT(?:OUNT)?\s*(?:NO\.?|#)|ACCOUNT\s*(?:NO\.?|#))\s*[:|]?\s*([A-Z0-9\-]{4,})/i,
-  ]);
-  const streetM = t.match(/(?:STREET|ADDRESS)\s*[:|]\s*(.+)/i)
-    || t.match(/^(\d{2,5}\s+[A-Z][A-Z ]+(?:AVE|ST|BLVD|DR|RD|LN|WAY|CT|TRL|TRAIL|PKWY|CIR|PL|LOOP|RANCH))/im);
-  const street = streetM ? streetM[1].trim() : '';
-  const cityM  = t.match(/(?:C\/S\/Z[P]?|CITY)\s*[:|]\s*([A-Z][A-Z ]+)[,\s]+([A-Z]{2})\s+(\d{5})/i)
-    || t.match(/([A-Z][A-Z ]+?),?\s+(NV|CA|TX|AZ|FL|NY|IL|WA|CO|GA|NM|UT|ID|OR|MN)\s+(\d{5})/);
-  const city     = cityM ? cityM[1].trim() : '';
-  const stateZip = cityM ? `${cityM[2]} ${cityM[3]}` : '';
-  const spouseM  = t.match(/(?:SPOUSE|COMPANION)[\s\S]{0,20}([A-Z][A-Z ,]{3,30})/i);
-  const spouse   = spouseM ? spouseM[1].trim() : '';
-  const empM     = t.match(/(?:EMPLOYER|PATIENT\s*EMPLOYER)\s*[:|]?\s*(.+)/i);
-  const employer = empM && !/UNEMPLOYED|NONE/i.test(empM[1]) ? empM[1].trim() : '';
-  return { patientName: name, dob, ssn, phone, mrn, street, city, stateZip, spouse, employer };
-}
 
 export default function Library({ onNavigate, idToken }: { onNavigate?: (page: string) => void; idToken?: string }) {
   const queryClient = useQueryClient();
@@ -605,27 +558,6 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
     return (bytes / 1024).toFixed(0) + " KB";
   };
 
-  // --- Facesheet -----------------------------------------------------------
-  const setFacesheetMutation = useMutation({
-    mutationFn: async ({ doc, allDocsInFolder }: { doc: any; allDocsInFolder: any[] }) => {
-      const detail = await awsProxy(`/documents/${doc.id}`, 'GET');
-      const pii    = parseFacesheetPii(detail.extracted_text || '');
-      for (const d of allDocsInFolder) {
-        const isSelf = d.id === doc.id;
-        await awsProxy(`/documents/${d.id}`, 'PUT', {
-          pii_facesheet: isSelf ? true : false,
-          facesheet_pii: isSelf ? JSON.stringify(pii) : null,
-        });
-      }
-      return pii;
-    },
-    onSuccess: (_pii: any, { doc }: any) => {
-      queryClient.invalidateQueries({ queryKey: ['aws-documents'] });
-      toast.success('Facesheet saved: ' + (doc.title || doc.original_filename || doc.id));
-    },
-    onError: (err: any) => toast.error('Failed to set facesheet: ' + err.message),
-  });
-
   // --- Filtering & grouping -------------------------------------------------
   const filteredDocuments = documents.filter((doc) => {
     const matchesSearch =
@@ -916,19 +848,6 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <Button variant="ghost" size="icon"
-                                      className={`h-8 w-8 transition-opacity ${(doc as any).pii_facesheet ? 'text-green-600 opacity-100' : 'opacity-0 group-hover:opacity-100 text-amber-600 hover:text-amber-700 hover:bg-amber-50'}`}
-                                      onClick={() => {
-                                        const folderDocs = documents.filter((d: any) => (d.folder || 'Unfiled') === (doc.folder || 'Unfiled'));
-                                        setFacesheetMutation.mutate({ doc, allDocsInFolder: folderDocs });
-                                      }}>
-                                      <ClipboardList className="w-4 h-4" />
-                                    </Button>
-                                  </TooltipTrigger>
-                                  <TooltipContent><p>{(doc as any).pii_facesheet ? '✅ Facesheet — click to refresh' : 'Set as Facesheet'}</p></TooltipContent>
-                                </Tooltip>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <Button variant="ghost" size="icon"
                                       className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity text-slate-600 hover:text-slate-700"
                                       onClick={() => { setEditingFolder(doc); setNewFolderName(doc.folder || ""); }}>
                                       <Edit2 className="w-4 h-4" />
@@ -973,11 +892,6 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
                               {doc.folder && (
                                 <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
                                   <Folder className="w-3 h-3 mr-1" />{doc.folder}
-                                </Badge>
-                              )}
-                              {(doc as any).pii_facesheet && (
-                                <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                                  <ClipboardList className="w-3 h-3 mr-1" />Facesheet
                                 </Badge>
                               )}
                             </div>
