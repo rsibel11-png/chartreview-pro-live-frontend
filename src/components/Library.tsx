@@ -38,6 +38,7 @@ import {
   Eye,
   RefreshCw,
   ClipboardList,
+  FileSpreadsheet,
 } from "lucide-react";
 
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || "";
@@ -242,6 +243,31 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
 
   // v24: Open document via shell record ID (full original PDF) for grouped docs,
   // or direct record ID for single docs. Shell file_key = original pre-split PDF.
+  const downloadRedactionLog = async (doc: any) => {
+    const logKey = (doc as any).redaction_log_key;
+    if (!logKey) { alert('No redaction log available for this document.'); return; }
+    try {
+      const tok = await getFreshToken();
+      const headers: any = tok ? { Authorization: `Bearer ${tok}` } : { 'x-api-key': API_KEY, 'x-org-id': ORG_ID };
+      const res = await fetch(
+        `${AWS_API_URL}/documents/${doc.id}/download?key=${encodeURIComponent(logKey)}`,
+        { headers }
+      );
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      const url  = data.url || data.download_url;
+      if (!url) throw new Error('No URL returned');
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = (doc.title || 'document').replace(/_REDACTED\.pdf$/i, '') + '_REDACTION_LOG.csv';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } catch (err: any) {
+      alert('Could not download redaction log: ' + (err.message || err));
+    }
+  };
+
   const openDocument = async (doc) => {
     try {
       // doc.id is always the correct ID to use:
