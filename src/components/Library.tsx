@@ -956,6 +956,18 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
                                   </TooltipTrigger>
                                   <TooltipContent><p>Edit folder</p></TooltipContent>
                                 </Tooltip>
+                                { (doc as any).redaction_log_key && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button variant="ghost" size="icon"
+                                      className="h-8 w-8 text-green-600 hover:text-green-700 hover:bg-green-50"
+                                      onClick={(e) => { e.stopPropagation(); downloadRedactionLog(doc); }}>
+                                      <FileSpreadsheet className="w-4 h-4" />
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent><p>Download redaction log (CSV)</p></TooltipContent>
+                                </Tooltip>
+                                )}
                                 <Tooltip>
                                   <TooltipTrigger asChild>
                                     <Button variant="ghost" size="icon"
