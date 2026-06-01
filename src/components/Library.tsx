@@ -247,15 +247,9 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
     const logKey = (doc as any).redaction_log_key;
     if (!logKey) { alert('No redaction log available for this document.'); return; }
     try {
-      const tok = await getFreshToken();
-      const headers: any = tok ? { Authorization: `Bearer ${tok}` } : { 'x-api-key': API_KEY, 'x-org-id': ORG_ID };
-      const res = await fetch(
-        `${AWS_API_URL}/documents/${doc.id}/download?key=${encodeURIComponent(logKey)}`,
-        { headers }
-      );
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      const url  = data.url || data.download_url;
+      // Use the backend's download-url endpoint with an explicit S3 key override
+      const result = await awsProxy(`/documents/${doc.id}/download-url?key=${encodeURIComponent(logKey)}`, 'GET');
+      const url = result.url || result.download_url || result.signedUrl;
       if (!url) throw new Error('No URL returned');
       const a = document.createElement('a');
       a.href = url;
