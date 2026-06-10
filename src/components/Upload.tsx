@@ -315,7 +315,7 @@ async function splitPdfClientSide(
       filename: sanitizeFilename(chunkFile.name),
       content_type: "application/pdf",
       file_size: chunkFile.size,
-      folder: folder || null,
+      folder: folder.trim() || null,
       parent_filename: file.name,
       total_parts: numChunks,
       part_index: i,
@@ -477,7 +477,7 @@ export default function Upload({ onNavigate, idToken = "" }: { onNavigate?: (pag
         content_type: file.type || "application/pdf",
         file_size: file.size,
         title: file.name,
-        folder: folder || null,
+        folder: folder.trim() || null,
       });
 
       await uploadToS3(upload_url, file, (pct: number) => {
@@ -601,7 +601,7 @@ export default function Upload({ onNavigate, idToken = "" }: { onNavigate?: (pag
               type="checkbox"
               className="rounded"
               checked={folder !== ""}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFolder(e.target.checked ? " " : "")}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFolder(e.target.checked ? "" : "")}
             />
             Assign to Folder (optional)
           </label>
