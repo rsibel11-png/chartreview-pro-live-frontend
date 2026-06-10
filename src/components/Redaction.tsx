@@ -396,11 +396,23 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
   const [completedJobs, setCompletedJobs]         = useState<RedactionJob[]>([]);
   const [error, setError]                         = useState<string | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [elapsedSec, setElapsedSec] = useState(0);
   const [piiModalOpen, setPiiModalOpen]   = useState(false);
   const [pendingGroup, setPendingGroup]   = useState<CaseGroup | null>(null);
   const [facesheetPii, setFacesheetPii]   = useState<Record<string, string> | undefined>(undefined);
   const [checkedKeys, setCheckedKeys]     = useState<Set<string>>(new Set());
   const [pendingBatch, setPendingBatch]   = useState<CaseGroup[]>([]);
+
+  // ── Elapsed timer helpers ──────────────────────────────────────────────────
+  const startTimer = () => {
+    setElapsedSec(0);
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = setInterval(() => setElapsedSec(s => s + 1), 1000);
+  };
+  const stopTimer = () => {
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+  };
 
   // ── Fetch all docs ───────────────────────────────────────────────────────
   const { data: documents = [], isLoading: docsLoading } = useQuery({
@@ -496,6 +508,7 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
   const pollJob = async (jobId: string) => {
     const job = await pollJobUntilDone(jobId);
     setRunning(false);
+    stopTimer();
     setCompletedJobs(prev => [job, ...prev]);
     if (job.status === 'error') setError(job.progress_message);
     if (pollRef.current) clearTimeout(pollRef.current);
@@ -521,6 +534,7 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
 
   const executeRedactCase = async (group: CaseGroup, userPii: string[]) => {
     setRunning(true);
+    startTimer();
     setError(null);
     const extra = userPii.length > 0 ? { user_supplied_pii: userPii } : {};
     try {
@@ -550,6 +564,7 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
       setError(`Redaction failed: ${err.message}`);
     }
     setRunning(false);
+    stopTimer();
     setStatusMsg('');
   };
 
@@ -558,6 +573,7 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
     if (!selectedDocs.length || running) return;
     setShowDialog(false);
     setRunning(true);
+    startTimer();
     setError(null);
     setStatusMsg('Starting redaction…');
     for (const docId of selectedDocs) {
@@ -574,6 +590,7 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
       }
     }
     setRunning(false);
+    stopTimer();
     setSelectedDocs([]);
     setStatusMsg('');
   };
@@ -674,11 +691,14 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
       {/* ── Running banner ── */}
       {running && (
         <div className="mb-6 rounded-xl bg-blue-50 border border-blue-200 p-4 flex items-center gap-3">
-          <Loader className="w-5 h-5 text-blue-500 shrink-0" />
-          <div>
+          <Loader className="w-5 h-5 text-blue-500 shrink-0 animate-spin" />
+          <div className="flex-1">
             <p className="font-semibold text-blue-800 text-sm">Redaction in progress</p>
             <p className="text-blue-600 text-sm mt-0.5">{statusMsg}</p>
           </div>
+          <span className="text-blue-500 text-sm font-mono shrink-0">
+            {Math.floor(elapsedSec / 60).toString().padStart(2, '0')}:{(elapsedSec % 60).toString().padStart(2, '0')}
+          </span>
         </div>
       )}
 
@@ -946,6 +966,7 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
             const queue = pendingBatch;
             setPendingBatch([]);
             setRunning(true);
+    startTimer();
             setError(null);
             const errors: string[] = [];
             for (let i = 0; i < queue.length; i++) {
@@ -955,6 +976,7 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
             }
             if (errors.length) setError(errors.join(' | '));
             setRunning(false);
+    stopTimer();
             setStatusMsg('');
           } else if (pendingGroup) {
             executeRedactCase(pendingGroup, userPii);
