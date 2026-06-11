@@ -10,6 +10,9 @@ import { useQuery } from '@tanstack/react-query';
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || 'https://1h4kpspbs6.execute-api.us-east-1.amazonaws.com/prod';
 const ORG_ID      = process.env.REACT_APP_ORG_ID      || '69ceb1ab037acdd4467b31c3';
 
+// ── Redaction job persistence key ─────────────────────────────────────────────
+const REDACT_JOB_KEY = 'crp_active_redact_job';
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 function getFreshToken(): string {
   try {
@@ -404,6 +407,35 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
   const [checkedKeys, setCheckedKeys]     = useState<Set<string>>(new Set());
   const [pendingBatch, setPendingBatch]   = useState<CaseGroup[]>([]);
 
+  // ── Resume any in-progress redaction job on mount ────────────────────────
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(REDACT_JOB_KEY);
+      if (saved) {
+        const { jobId, label } = JSON.parse(saved);
+        if (jobId) {
+          setRunning(true);
+          startTimer();
+          setStatusMsg(`Resuming redaction: ${label || ''}…`);
+          pollJobUntilDone(jobId).then((job: RedactionJob) => {
+            localStorage.removeItem(REDACT_JOB_KEY);
+            setRunning(false);
+            stopTimer();
+            setStatusMsg('');
+            setCompletedJobs(prev => [job, ...prev]);
+            if (job.status === 'error') setError(job.progress_message);
+          }).catch(() => {
+            localStorage.removeItem(REDACT_JOB_KEY);
+            setRunning(false);
+            stopTimer();
+            setStatusMsg('');
+          });
+        }
+      }
+    } catch { /* ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Elapsed timer helpers ──────────────────────────────────────────────────
   const startTimer = () => {
     setElapsedSec(0);
@@ -546,7 +578,9 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
           ...extra,
         });
         if (resp.job_id) {
+          try { localStorage.setItem(REDACT_JOB_KEY, JSON.stringify({ jobId: resp.job_id, label: group.label })); } catch {}
           const job = await pollJobUntilDone(resp.job_id);
+          try { localStorage.removeItem(REDACT_JOB_KEY); } catch {}
           setCompletedJobs(prev => [job, ...prev]);
           if (job.status === 'error') setError(job.progress_message);
         }
@@ -555,7 +589,9 @@ const Redaction: React.FC<RedactionProps> = ({ onNavigate }) => {
         const resp = await awsProxy(`/documents/${group.parts[0].id}/redact`, 'POST',
           userPii.length > 0 ? extra : undefined);
         if (resp.job_id) {
+          try { localStorage.setItem(REDACT_JOB_KEY, JSON.stringify({ jobId: resp.job_id, label: group.label })); } catch {}
           const job = await pollJobUntilDone(resp.job_id);
+          try { localStorage.removeItem(REDACT_JOB_KEY); } catch {}
           setCompletedJobs(prev => [job, ...prev]);
           if (job.status === 'error') setError(job.progress_message);
         }
