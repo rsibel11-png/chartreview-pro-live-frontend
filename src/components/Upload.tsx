@@ -601,7 +601,7 @@ export default function Upload({ onNavigate, idToken = "" }: { onNavigate?: (pag
               type="checkbox"
               className="rounded"
               checked={folder !== ""}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFolder(e.target.checked ? "" : "")}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setFolder(e.target.checked ? " " : "")}
             />
             Assign to Folder (optional)
           </label>
