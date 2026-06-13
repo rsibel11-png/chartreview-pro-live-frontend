@@ -39,6 +39,7 @@ import {
   RefreshCw,
   ClipboardList,
   FileSpreadsheet,
+  Layers,
 } from "lucide-react";
 
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || "";
@@ -262,6 +263,23 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
     }
   };
 
+  const flattenDocument = async (doc: any) => {
+    if (flatteningDocId) return;
+    setFlatteningDocId(doc.id);
+    try {
+      const result = await awsProxy(`/documents/${doc.id}/flatten`, 'POST', {});
+      if (result.status === 'complete') {
+        toast.success('PDF flattened — text layer removed from redacted pages.');
+      } else {
+        toast.error('Flatten failed: ' + (result.error || 'Unknown error'));
+      }
+    } catch (err: any) {
+      toast.error('Flatten error: ' + (err.message || err));
+    } finally {
+      setFlatteningDocId(null);
+    }
+  };
+
   const openDocument = async (doc) => {
     try {
       // doc.id is always the correct ID to use:
@@ -284,6 +302,7 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
   const [viewMode, setViewMode] = useState("date");
   const [folderFilter, setFolderFilter] = useState("all");
   const [deleteDialog, setDeleteDialog] = useState(null);
+  const [flatteningDocId, setFlatteningDocId] = useState<string | null>(null);
   const [deleteAllDialog, setDeleteAllDialog] = useState(false);
   const [scanningDocument, setScanningDocument] = useState(null);
   const [normalizingExtensions, setNormalizingExtensions] = useState(false);
@@ -966,6 +985,21 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
                                     </Button>
                                   </TooltipTrigger>
                                   <TooltipContent><p>Download redaction log (CSV)</p></TooltipContent>
+                                </Tooltip>
+                                )}
+                                { (doc as any).is_redacted && (
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Button variant="ghost" size="icon"
+                                      className="h-8 w-8 text-purple-600 hover:text-purple-700 hover:bg-purple-50 disabled:opacity-40"
+                                      disabled={flatteningDocId === doc.id}
+                                      onClick={(e) => { e.stopPropagation(); flattenDocument(doc); }}>
+                                      {flatteningDocId === doc.id
+                                        ? <Loader2 className="w-4 h-4 animate-spin" />
+                                        : <Layers className="w-4 h-4" />}
+                                    </Button>
+                                  </TooltipTrigger>
+                                  <TooltipContent><p>Flatten PDF (permanently remove text layer from redacted pages)</p></TooltipContent>
                                 </Tooltip>
                                 )}
                                 <Tooltip>
