@@ -268,8 +268,9 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
     setFlatteningDocId(doc.id);
     try {
       const result = await awsProxy(`/documents/${doc.id}/flatten`, 'POST', {});
-      if (result.status === 'complete') {
+      if (result.message || result.status === 'complete') {
         toast.success('PDF flattened — text layer removed from redacted pages.');
+        setDocuments(prev => prev.filter(d => d.id !== doc.id));  // remove old redacted from view
       } else {
         toast.error('Flatten failed: ' + (result.error || 'Unknown error'));
       }
