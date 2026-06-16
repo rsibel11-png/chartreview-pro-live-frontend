@@ -903,9 +903,9 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
                   const totalPages = (doc._is_group ? (doc._parts || []) : [doc]).reduce((s: number, p: any) => s + (p.page_count || 0), 0);
 
                   return (
-                    <Card key={doc.id} className={`hover:shadow-lg transition-all duration-300 group ${selectedDocuments.has(doc.id) ? "ring-2 ring-blue-500 bg-blue-50" : ""}`}>
-                      <CardContent className="p-6">
-                        <div className="space-y-4">
+                    <Card key={doc.id} className={`hover:shadow-lg transition-all duration-300 group overflow-hidden ${selectedDocuments.has(doc.id) ? "ring-2 ring-blue-500 bg-blue-50" : ""}`}>
+                      <CardContent className="p-4">
+                        <div className="space-y-3 min-w-0">
 
                           {/* Classification panel */}
 
@@ -927,8 +927,8 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
                           )}
 
                           {/* Icon + actions */}
-                          <div className="flex items-start justify-between">
-                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                          <div className="flex items-start justify-between gap-2 min-w-0">
+                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0 ${
                               (doc as any).is_redacted ? "bg-green-100" : "bg-cyan-100"
                             }`}>
                               {(doc as any).is_redacted
@@ -936,7 +936,7 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
                                 : <FileText className="w-6 h-6 text-cyan-600" />}
                             </div>
                             <TooltipProvider>
-                              <div className="flex gap-2">
+                              <div className="flex flex-wrap gap-1 flex-shrink-0 justify-end">
                                 <Checkbox checked={selectedDocuments.has(doc.id)}
                                   onCheckedChange={() => toggleDocumentSelection(doc.id)} className="mt-1" />
                                 <Tooltip>
@@ -1018,14 +1018,14 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
                           </div>
 
                           {/* Title */}
-                          <div>
+                          <div className="min-w-0 w-full">
                             <TooltipProvider>
                               <Tooltip>
                                 <TooltipTrigger asChild>
-                                  <div className="flex items-start justify-between gap-2 mb-2">
-                                    <h3 className="font-semibold text-slate-900 line-clamp-2 cursor-default">{doc.title}</h3>
+                                  <div className="flex items-start justify-between gap-2 mb-2 min-w-0">
+                                    <h3 className="font-semibold text-slate-900 line-clamp-2 cursor-default break-words min-w-0">{doc.title}</h3>
                                     {totalPages > 0 && (
-                                      <span className="shrink-0 text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full whitespace-nowrap">
+                                      <span className="flex-shrink-0 text-xs font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full whitespace-nowrap">
                                         {totalPages} pg
                                       </span>
                                     )}
@@ -1051,7 +1051,7 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
                           </div>
 
                           {/* Meta */}
-                          <div className="space-y-1">
+                          <div className="space-y-1 min-w-0 w-full">
                             {doc.file_size && (
                               <p className="text-xs text-slate-500">
                                 Size: <span className="font-medium">{formatSize(doc.file_size)}</span>
