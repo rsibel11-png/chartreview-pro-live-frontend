@@ -267,16 +267,44 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
     if (flatteningDocId) return;
     setFlatteningDocId(doc.id);
     try {
-      const result = await awsProxy(`/documents/${doc.id}/flatten`, 'POST', {});
-      if (result.message || result.status === 'complete') {
+      // Kick off async flatten — returns 202 with job_id immediately
+      const startResult = await awsProxy(`/documents/${doc.id}/flatten`, 'POST', {});
+
+      if (startResult.status !== 'flattening' || !startResult.job_id) {
+        // Unexpected sync success (shouldn't happen with v6, but handle gracefully)
         toast.success('PDF flattened — text layer removed from redacted pages.');
         queryClient.invalidateQueries({ queryKey: ['aws-documents'] });
-      } else {
-        toast.error('Flatten failed: ' + (result.error || 'Unknown error'));
+        setFlatteningDocId(null);
+        return;
       }
+
+      const jobId = startResult.job_id;
+      toast.success('Flattening started — this may take up to 2 minutes for large documents.');
+
+      // Poll /flatten-status/{jobId} until complete or error
+      const poll = async (): Promise<void> => {
+        try {
+          const statusResult = await awsProxy(`/flatten-status/${jobId}`, 'GET');
+          if (statusResult.status === 'complete') {
+            toast.success('PDF flattened — text layer permanently removed.');
+            queryClient.invalidateQueries({ queryKey: ['aws-documents'] });
+            setFlatteningDocId(null);
+          } else if (statusResult.status === 'error') {
+            toast.error('Flatten failed: ' + (statusResult.error || 'Unknown error'));
+            setFlatteningDocId(null);
+          } else {
+            // Still flattening — poll again in 4s
+            setTimeout(poll, 4000);
+          }
+        } catch (pollErr: any) {
+          // Network hiccup — keep polling
+          setTimeout(poll, 6000);
+        }
+      };
+      setTimeout(poll, 5000);  // first check after 5s
+
     } catch (err: any) {
       toast.error('Flatten error: ' + (err.message || err));
-    } finally {
       setFlatteningDocId(null);
     }
   };
