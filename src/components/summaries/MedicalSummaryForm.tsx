@@ -1,4 +1,5 @@
 // MedicalSummaryForm.tsx — chartreview-native-frontend
+// Updated: 2026-07-21 — added PT/OT consolidation (keep first & last per facility)
 // Ported: 2026-05-03 — CRA/TypeScript, all shadcn/ui inlined, MacroPicker/DuplicateVisitDetector/PTConsolidationHelper stripped
 // awsProxy rewired to direct fetch (no Base44 relay)
 
@@ -18,6 +19,25 @@ const STRING_VISIT_FIELDS = [
   'imaging_findings','lab_findings','impression_diagnosis','treatment_plan'
 ];
 const VALID_PROGRESSIONS = ['improved','same','worse','not_documented'];
+
+// ── PT/OT detection helpers ───────────────────────────────────────────────────
+function isPtOtVisit(visit: any): boolean {
+  const setting = (visit.practice_setting || '').toLowerCase();
+  const provider = (visit.rendering_provider || '').toLowerCase();
+  if (/physical therapy|physiotherapy|rehabilitation|rehab|hand therapy|occupational therapy/.test(setting)) return true;
+  if (/\b(PT|PTA|DPT|OT|COTA|CLT)\b/.test(provider) && !/\b(MD|DO|PA|NP|FNP|APRN|DC|DMD|DPM)\b/.test(provider)) return true;
+  if (/\btherapy\b|\brehabilitation\b/.test(setting) && !/pain management|spine|orthopedic|medical center|hospital/.test(setting)) return true;
+  return false;
+}
+
+function normFacility(f: string): string {
+  return (f || '').toLowerCase().trim()
+    .replace(/\s*[-\u2013\u2014]\s*(blue diamond|lake mead|nw|ne|se|sw|north|south|east|west|suite|ste|bldg|building|floor|fl|\d+).*$/i, '')
+    .replace(/\s*[-\u2013\u2014]\s*[a-z0-9 ]{1,30}$/i, '')
+    .replace(/\s*\(.*?\)\s*$/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function sanitizeSummary(s: any) {
@@ -440,10 +460,50 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
               <h3 className="text-xl font-bold text-slate-900">
                 Office Visits ({formData.visits?.length || 0})
               </h3>
-              <Button onClick={addVisit} size="sm" variant="outline">
-                <Plus className="w-4 h-4 mr-2" />Add Visit
-              </Button>
+              <div className="flex gap-2">
+                <Button onClick={() => setShowPtConsolidate(!showPtConsolidate)} size="sm" variant="outline">
+                  Consolidate PT/OT
+                </Button>
+                <Button onClick={addVisit} size="sm" variant="outline">
+                  <Plus className="w-4 h-4 mr-2" />Add Visit
+                </Button>
+              </div>
             </div>
+
+            {showPtConsolidate && (() => {
+              const groups = getPtOtGroups();
+              const groupEntries = Object.entries(groups);
+              if (groupEntries.length === 0) {
+                return <div className="p-3 bg-slate-50 rounded-md text-sm text-slate-600">No PT/OT visits found in this summary.</div>;
+              }
+              let totalToRemove = 0;
+              return (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-md space-y-2">
+                  <p className="text-sm font-medium text-slate-700">PT/OT Consolidation — keep first &amp; last visit per facility:</p>
+                  {groupEntries.map(([key, group]: [string, any]) => {
+                    const count = group.indices.length;
+                    const willRemove = count > 2 ? count - 2 : 0;
+                    totalToRemove += willRemove;
+                    const dateRange = group.dates.filter(Boolean).sort();
+                    return (
+                      <div key={key} className="flex items-center justify-between text-sm">
+                        <span className="text-slate-700">{group.facility} ({count} visits{dateRange.length > 0 ? `, ${dateRange[0]} \u2013 ${dateRange[dateRange.length-1]}` : ''})</span>
+                        {willRemove > 0 && <span className="text-orange-600 font-medium">{willRemove} will be removed</span>}
+                        {willRemove === 0 && <span className="text-green-600">Already minimal</span>}
+                      </div>
+                    );
+                  })}
+                  {totalToRemove > 0 && (
+                    <div className="flex justify-end gap-2 pt-2">
+                      <Button onClick={() => setShowPtConsolidate(false)} size="sm" variant="ghost">Cancel</Button>
+                      <Button onClick={consolidatePtOt} size="sm" className="bg-blue-600 hover:bg-blue-700 text-white">
+                        Remove {totalToRemove} middle visit{totalToRemove > 1 ? 's' : ''}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {formData.visits && formData.visits.length > 0 && (
               <DuplicateVisitDetector
