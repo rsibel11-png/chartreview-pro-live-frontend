@@ -1,5 +1,5 @@
 // MedicalSummaryForm.tsx
-// Updated: 2026-07-21 — added PT/OT consolidation (keep first & last per facility) — chartreview-native-frontend
+// Updated: 2026-07-22 — sync visit_count to visits.length on every save so library card stays accurate after PT/OT consolidation (keep first & last per facility) — chartreview-native-frontend
 // Ported: 2026-05-03 — CRA/TypeScript, all shadcn/ui inlined, MacroPicker/DuplicateVisitDetector/PTConsolidationHelper stripped
 // awsProxy rewired to direct fetch (no Base44 relay)
 
@@ -86,9 +86,7 @@ function PtConsolidatePanel({ groups, onConfirm, onCancel }: {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function sanitizeSummary(s: any) {
-  return {
-    ...s,
-    visits: (s.visits || []).map((visit: any) => {
+  const cleanVisits = (s.visits || []).map((visit: any) => {
       const clean: any = { ...visit };
       STRING_VISIT_FIELDS.forEach((field: string) => {
         const val = clean[field];
@@ -99,7 +97,11 @@ function sanitizeSummary(s: any) {
       if (!Array.isArray(clean.icd10_codes)) clean.icd10_codes = [];
       if (!VALID_PROGRESSIONS.includes(clean.symptom_progression)) clean.symptom_progression = 'not_documented';
       return clean;
-    })
+    });
+  return {
+    ...s,
+    visits: cleanVisits,
+    visit_count: cleanVisits.length,  // always sync visit_count to actual array length on save
   };
 }
 
