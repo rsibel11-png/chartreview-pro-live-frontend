@@ -1,5 +1,5 @@
-// MedicalSummaryForm.tsx — chartreview-native-frontend
-// Updated: 2026-07-21 — added PT/OT consolidation (keep first & last per facility)
+// MedicalSummaryForm.tsx
+// Updated: 2026-07-21 — added PT/OT consolidation (keep first & last per facility) — chartreview-native-frontend
 // Ported: 2026-05-03 — CRA/TypeScript, all shadcn/ui inlined, MacroPicker/DuplicateVisitDetector/PTConsolidationHelper stripped
 // awsProxy rewired to direct fetch (no Base44 relay)
 
@@ -37,6 +37,51 @@ function normFacility(f: string): string {
     .replace(/\s*\(.*?\)\s*$/, '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+// ── PT/OT Consolidation Panel component ──────────────────────────────────────
+function PtConsolidatePanel({ groups, onConfirm, onCancel }: {
+  groups: { [key: string]: { facility: string; indices: number[]; dates: string[] } };
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const groupEntries = Object.entries(groups);
+  if (groupEntries.length === 0) {
+    return <div className="p-3 bg-slate-50 rounded-md text-sm text-slate-600">No PT/OT visits found in this summary.</div>;
+  }
+  const rowData = groupEntries.map(([key, group]: [string, any]) => {
+    const count: number = (group.indices as number[]).length;
+    const willRemove: number = count > 2 ? count - 2 : 0;
+    const dateRange: string[] = (group.dates as string[]).filter(Boolean).sort();
+    return { key, facility: group.facility as string, count, willRemove, dateRange };
+  });
+  const totalToRemove: number = rowData.reduce((acc: number, r: any) => acc + (r.willRemove as number), 0);
+  return (
+    <div className="p-3 bg-blue-50 border border-blue-200 rounded-md space-y-2">
+      <p className="text-sm font-medium text-slate-700">PT/OT Consolidation — keep first &amp; last visit per facility:</p>
+      {rowData.map((r: any) => (
+        <div key={r.key as string} className="flex items-center justify-between text-sm">
+          <span className="text-slate-700">
+            {r.facility as string} ({r.count as number} visits{(r.dateRange as string[]).length > 0 ? `, ${(r.dateRange as string[])[0]} – ${(r.dateRange as string[])[(r.dateRange as string[]).length - 1]}` : ''})
+          </span>
+          {(r.willRemove as number) > 0 && <span className="text-orange-600 font-medium">{r.willRemove as number} will be removed</span>}
+          {(r.willRemove as number) === 0 && <span className="text-green-600">Already minimal</span>}
+        </div>
+      ))}
+      {totalToRemove > 0 && (
+        <div className="flex justify-end gap-2 pt-2">
+          <button type="button" onClick={onCancel}
+            className="inline-flex items-center justify-center rounded-md font-medium px-3 py-1.5 text-xs border border-slate-300 bg-white text-slate-700 hover:bg-slate-50">
+            Cancel
+          </button>
+          <button type="button" onClick={onConfirm}
+            className="inline-flex items-center justify-center rounded-md font-medium px-3 py-1.5 text-xs bg-blue-600 text-white hover:bg-blue-700">
+            Remove {totalToRemove} middle visit{totalToRemove > 1 ? 's' : ''}
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -351,6 +396,45 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
     updateVisit(visitIndex, 'icd10_codes', current.filter((c: string) => c !== code));
   };
 
+  // ── PT/OT Consolidation state + logic ───────────────────────────────────────
+  const [showPtConsolidate, setShowPtConsolidate] = useState<boolean>(false);
+
+  const getPtOtGroups = (): { [key: string]: { facility: string; indices: number[]; dates: string[] } } => {
+    const visits: any[] = formData.visits || [];
+    const groups: { [key: string]: { facility: string; indices: number[]; dates: string[] } } = {};
+    visits.forEach((visit: any, i: number) => {
+      if (!isPtOtVisit(visit)) return;
+      const key = normFacility(visit.practice_setting || visit.rendering_provider || 'pt');
+      if (!groups[key]) groups[key] = { facility: visit.practice_setting || 'Physical Therapy', indices: [], dates: [] };
+      groups[key].indices.push(i);
+      groups[key].dates.push(visit.visit_date || '');
+    });
+    return groups;
+  };
+
+  const consolidatePtOt = () => {
+    const groups = getPtOtGroups();
+    const indicesToRemove = new Set<number>();
+    Object.values(groups).forEach((group: any) => {
+      if ((group.indices as number[]).length <= 2) return;
+      const sorted = (group.indices as number[])
+        .map((idx: number, i: number) => ({ idx, date: (group.dates as string[])[i] }))
+        .sort((a: any, b: any) => ((a.date as string) || '').localeCompare((b.date as string) || ''));
+      const firstIdx: number = sorted[0].idx as number;
+      const lastIdx: number = sorted[sorted.length - 1].idx as number;
+      (group.indices as number[]).forEach((idx: number) => {
+        if (idx !== firstIdx && idx !== lastIdx) indicesToRemove.add(idx);
+      });
+    });
+    if (indicesToRemove.size === 0) { setShowPtConsolidate(false); return; }
+    setFormData((prev: any) => ({
+      ...prev,
+      visits: (prev.visits as any[]).filter((_: any, i: number) => !indicesToRemove.has(i))
+    }));
+    setExpandedVisit(-1);
+    setShowPtConsolidate(false);
+  };
+
   // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
@@ -470,40 +554,11 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
               </div>
             </div>
 
-            {showPtConsolidate && (() => {
-              const groups = getPtOtGroups();
-              const groupEntries = Object.entries(groups);
-              if (groupEntries.length === 0) {
-                return <div className="p-3 bg-slate-50 rounded-md text-sm text-slate-600">No PT/OT visits found in this summary.</div>;
-              }
-              let totalToRemove = 0;
-              return (
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-md space-y-2">
-                  <p className="text-sm font-medium text-slate-700">PT/OT Consolidation — keep first &amp; last visit per facility:</p>
-                  {groupEntries.map(([key, group]: [string, any]) => {
-                    const count = group.indices.length;
-                    const willRemove = count > 2 ? count - 2 : 0;
-                    totalToRemove += willRemove;
-                    const dateRange = group.dates.filter(Boolean).sort();
-                    return (
-                      <div key={key} className="flex items-center justify-between text-sm">
-                        <span className="text-slate-700">{group.facility} ({count} visits{dateRange.length > 0 ? `, ${dateRange[0]} \u2013 ${dateRange[dateRange.length-1]}` : ''})</span>
-                        {willRemove > 0 && <span className="text-orange-600 font-medium">{willRemove} will be removed</span>}
-                        {willRemove === 0 && <span className="text-green-600">Already minimal</span>}
-                      </div>
-                    );
-                  })}
-                  {totalToRemove > 0 && (
-                    <div className="flex justify-end gap-2 pt-2">
-                      <Button onClick={() => setShowPtConsolidate(false)} size="sm" variant="ghost">Cancel</Button>
-                      <Button onClick={consolidatePtOt} size="sm" className="bg-blue-600 hover:bg-blue-700 text-white">
-                        Remove {totalToRemove} middle visit{totalToRemove > 1 ? 's' : ''}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
+            {showPtConsolidate && <PtConsolidatePanel
+              groups={getPtOtGroups()}
+              onConfirm={consolidatePtOt}
+              onCancel={() => setShowPtConsolidate(false)}
+            />}
 
             {formData.visits && formData.visits.length > 0 && (
               <DuplicateVisitDetector
