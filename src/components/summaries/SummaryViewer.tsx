@@ -61,11 +61,16 @@ export default function SummaryViewer({ summary, onClose, onEdit, onExport }: Su
   const formatDiagnoses = (diagnosisText: string) => {
     if (!diagnosisText) return null;
     const text = diagnosisText.trim();
-    const hasMultiple = text.match(/^\d+[\.)]/m) || text.includes('\n');
-    if (hasMultiple) {
-      return text.split(/(?:\r?\n)+|\d+[.)]\s*/).filter((d: string) => d.trim());
+    // Split only on newlines, then strip leading list markers ("1. " / "1) ")
+    // CRITICAL: do NOT use \d+[.)] as a global split — it fragments ICD codes like S61.442D
+    if (text.includes('\n')) {
+      return text
+        .split(/\r?\n/)
+        .map((line: string) => line.replace(/^\d+[.)\]]\s+/, '').trim())
+        .filter((d: string) => d.length > 0);
     }
-    return [text];
+    // Single line: strip a leading list number if present, return as single item
+    return [text.replace(/^\d+[.)\]]\s+/, '').trim()].filter((d: string) => d.length > 0);
   };
 
   const sortedVisits: any[] = summary.visits
