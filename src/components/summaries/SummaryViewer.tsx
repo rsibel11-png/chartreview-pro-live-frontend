@@ -83,8 +83,13 @@ export default function SummaryViewer({ summary, onClose, onEdit, onExport }: Su
 
   const formatLocalDate = (dateStr: string) => {
     if (!dateStr) return null;
-    const d = new Date(dateStr + 'T00:00:00');
-    return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+    // Handle ISO format (YYYY-MM-DD) — parse and reformat
+    const parts = dateStr.split('-').map(Number);
+    if (parts.length === 3 && !isNaN(parts[0])) {
+      return `${String(parts[1]).padStart(2, '0')}/${String(parts[2]).padStart(2, '0')}/${parts[0]}`;
+    }
+    // Already in MM/DD/YYYY or other format — return as-is
+    return dateStr;
   };
 
   return (
