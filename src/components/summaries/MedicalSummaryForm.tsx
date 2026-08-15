@@ -25,7 +25,7 @@ function isPtOtVisit(visit: any): boolean {
   const setting = (visit.practice_setting || '').toLowerCase();
   const provider = (visit.rendering_provider || '').toLowerCase();
   if (/physical therapy|physiotherapy|rehabilitation|rehab|hand therapy|occupational therapy/.test(setting)) return true;
-  if (/\b(PT|PTA|DPT|OT|COTA|CLT)\b/.test(provider) && !/\b(MD|DO|PA|NP|FNP|APRN|DC|DMD|DPM)\b/.test(provider)) return true;
+  if (/\b(PT|PTA|DPT|OT|COTA|CLT)\b/i.test(provider) && !/\b(MD|DO|PA|NP|FNP|APRN|DC|DMD|DPM)\b/i.test(provider)) return true;
   if (/\btherapy\b|\brehabilitation\b/.test(setting) && !/pain management|spine|orthopedic|medical center|hospital/.test(setting)) return true;
   return false;
 }
