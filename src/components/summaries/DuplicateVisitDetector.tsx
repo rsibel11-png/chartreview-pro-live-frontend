@@ -74,7 +74,7 @@ function VisitContentPanel({
           <input
             type="checkbox"
             checked={isSelected}
-            onChange={() => {}}
+            onChange={onToggle}
             className="w-4 h-4 cursor-pointer"
             onClick={(e: any) => e.stopPropagation()}
           />
