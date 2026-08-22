@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-// App.tsx — chartreview-native-frontend
-// Updated: 2026-05-23 — Added Redaction page
+// App.tsx — chartreview-pro-live-frontend
+// Updated: 2026-08-22 — Hide Redaction page from live production
 
 import React, { useState, useCallback } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -8,7 +8,6 @@ import { Toaster } from 'react-hot-toast';
 import {
   FileText, LayoutDashboard, Upload, Library,
   FileCheck, LogOut, Menu, ListOrdered, Settings as SettingsIcon,
-  ShieldOff,
 } from 'lucide-react';
 import Dashboard        from './components/Dashboard';
 import UploadPage       from './components/Upload';
@@ -17,7 +16,6 @@ import MedicalSummaries from './components/MedicalSummaries';
 import VisitIndex       from './components/VisitIndex';
 import Login, { AuthUser } from './components/Login';
 import Settings         from './components/Settings';
-import Redaction        from './components/Redaction';
 
 // ── QueryClient ───────────────────────────────────────────────────────────────
 const queryClient = new QueryClient({
@@ -31,7 +29,6 @@ const NAV_ITEMS = [
   { name: 'Library',          label: 'Document Library',   Icon: Library         },
   { name: 'MedicalSummaries', label: 'Medical Summaries',  Icon: FileCheck       },
   { name: 'VisitIndex',       label: 'Visit Index',        Icon: ListOrdered     },
-  { name: 'Redaction',        label: 'Redaction',          Icon: ShieldOff       },
   { name: 'Settings',         label: 'Settings',           Icon: SettingsIcon    },
 ];
 
@@ -45,7 +42,6 @@ const LibraryAny    = LibraryPage      as any;
 const MedSumAny     = MedicalSummaries as any;
 const VisitIdxAny   = VisitIndex       as any;
 const SettingsAny   = Settings         as any;
-const RedactionAny  = Redaction        as any;
 
 // ── App shell ─────────────────────────────────────────────────────────────────
 function AppInner() {
@@ -86,7 +82,6 @@ function AppInner() {
       case 'Library':          return <LibraryAny   onNavigate={navigate} {...authProps} />;
       case 'MedicalSummaries': return <MedSumAny    onNavigate={navigate} {...authProps} />;
       case 'VisitIndex':       return <VisitIdxAny  onNavigate={navigate} {...authProps} />;
-      case 'Redaction':        return <RedactionAny onNavigate={navigate} {...authProps} />;
       case 'Settings':         return <SettingsAny  onNavigate={navigate} {...authProps} />;
       default:                 return <DashboardAny onNavigate={navigate} {...authProps} />;
     }
@@ -111,7 +106,7 @@ function AppInner() {
           Navigation
         </p>
         <nav className="space-y-1">
-          {NAV_ITEMS.map(({ name, label, Icon }) => {
+          {NAV_ITEMS.map(({ name, label, Icon }: any) => {
             const active = currentPage === name;
             return (
               <button
