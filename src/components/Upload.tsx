@@ -1,4 +1,5 @@
-﻿// Upload.tsx — chartreview-native-frontend
+// Upload.tsx — chartreview-pro-live-frontend
+// Updated: 2026-08-22 — Integrated Stripe per-page payment flow
 // Ported: 2026-05-03 — CRA/TypeScript port of Upload v16
 // Fixes applied: env vars, inlined UI components, removed useNavigate/createPageUrl,
 //   opts:any, _pdfLib:any, all callback params typed, Array.from for sets
@@ -6,6 +7,7 @@
 import React, { useState, useCallback, useRef } from "react";
 import { Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
+import PagePaymentDialog from "./PagePaymentDialog";
 
 // ── Env vars (CRA) ────────────────────────────────────────────────────────────
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || "";
@@ -74,47 +76,47 @@ function Input({ value, onChange, placeholder, className = "", autoFocus }: {
 }
 
 // ── Lucide-style icon stubs (inlined SVGs to avoid dep issues) ────────────────
-const FileText = ({ className = "" }) => (
+const FileText = ({ className = "" }: any) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
       d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
   </svg>
 );
-const X = ({ className = "" }) => (
+const X = ({ className = "" }: any) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
   </svg>
 );
-const CheckCircle = ({ className = "" }) => (
+const CheckCircle = ({ className = "" }: any) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
   </svg>
 );
-const AlertCircle = ({ className = "" }) => (
+const AlertCircle = ({ className = "" }: any) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
       d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
   </svg>
 );
-const RefreshCw = ({ className = "" }) => (
+const RefreshCw = ({ className = "" }: any) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
       d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
   </svg>
 );
-const Scissors = ({ className = "" }) => (
+const Scissors = ({ className = "" }: any) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <circle cx="6" cy="6" r="3" strokeWidth={2} /><circle cx="6" cy="18" r="3" strokeWidth={2} />
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 4L8.12 15.88M14.47 14.48L20 20M8.12 8.12L12 12" />
   </svg>
 );
-const Shield = ({ className = "" }) => (
+const Shield = ({ className = "" }: any) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
       d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
   </svg>
 );
-const UploadIcon = ({ className = "" }) => (
+const UploadIcon = ({ className = "" }: any) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
       d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
@@ -129,17 +131,13 @@ function sanitizeFilename(name: string): string {
     .replace(/_+/g, "_");
 }
 function inferFolderFromFilename(filename: string): string | null {
-  // Strip extension
   const base = filename.replace(/\.[^.]+$/, '');
-  // Split on underscores only (preserves MORA-MALDONADO as one token)
   const tokens = base.split('_');
-  // Find indices of ALL-CAPS tokens (optionally hyphenated, min 2 chars or single letter)
   const capIndices: number[] = [];
   tokens.forEach((t, i) => {
     if (/^[A-Z][A-Z\-]*[A-Z]$|^[A-Z]$/.test(t)) capIndices.push(i);
   });
   if (capIndices.length < 2) return null;
-  // Find longest consecutive run of cap tokens
   let best: number[] = [], cur: number[] = [capIndices[0]];
   for (let k = 1; k < capIndices.length; k++) {
     if (capIndices[k] === cur[cur.length - 1] + 1) { cur.push(capIndices[k]); }
@@ -148,14 +146,12 @@ function inferFolderFromFilename(filename: string): string | null {
   if (cur.length > best.length) best = cur;
   if (best.length < 2) return null;
   const nameToks = best.map(i => tokens[i]);
-  const last = nameToks[0]; // e.g. MORA-MALDONADO
-  const firstParts = nameToks.slice(1).filter(t => t.length > 1); // drop bare initials
+  const last = nameToks[0];
+  const firstParts = nameToks.slice(1).filter(t => t.length > 1);
   const first = (firstParts.length ? firstParts : nameToks.slice(1))
     .map(t => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase()).join(' ');
   return first ? `${last}, ${first}` : last;
 }
-
-
 
 function formatSize(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
@@ -223,6 +219,40 @@ async function awsProxy(path: string, method = "GET", data?: any, retries = 4): 
   }
 }
 
+// ── Stripe API helpers ────────────────────────────────────────────────────────
+async function stripeApiCall(path: string, method: string = "GET", data?: any): Promise<any> {
+  const url = `${AWS_API_URL}${path}`;
+  const opts: any = {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": API_KEY,
+      "Authorization": `Bearer ${_idToken}`,
+      "x-org-id": ORG_ID,
+    },
+  };
+  if (data) opts.body = JSON.stringify(data);
+  const res = await fetch(url, opts);
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || `Stripe API error: ${res.status}`);
+  return json;
+}
+
+// ── Fast client-side PDF page count ──────────────────────────────────────────
+async function countPdfPages(file: File): Promise<number> {
+  if (!file.type.includes('pdf') && !file.name.toLowerCase().endsWith('.pdf')) {
+    return Math.max(1, Math.round(file.size / 100000));
+  }
+  try {
+    const buffer = await file.arrayBuffer();
+    const text = new TextDecoder('latin1').decode(buffer);
+    const matches = text.match(/\/Type\s*\/Page[^s]/g);
+    return matches ? matches.length : Math.max(1, Math.round(file.size / 100000));
+  } catch {
+    return Math.max(1, Math.round(file.size / 100000));
+  }
+}
+
 // ── Global process queue ──────────────────────────────────────────────────────
 const processQueue: Array<{ docId: string; resolve: (v: any) => void; reject: (e: any) => void }> = [];
 let processRunning = false;
@@ -243,10 +273,10 @@ async function drainProcessQueue() {
         resolve(result);
         success = true;
         break;
-      } catch (e: any) {
+      } catch (err: any) {
         if (attempt === 3) {
-          console.error(`/process failed after 4 attempts for ${docId}:`, e.message);
-          reject(e);
+          reject(err);
+          break;
         }
       }
     }
@@ -401,7 +431,7 @@ const FileRow = React.memo(({ file, onRemove, onRetry }: { file: any; onRemove: 
 });
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function Upload({ onNavigate, idToken = "" }: { onNavigate?: (page: string) => void; idToken?: string }) {
+export default function Upload({ onNavigate, idToken = "", isFreeUser = false }: { onNavigate?: (page: string) => void; idToken?: string; isFreeUser?: boolean }) {
   // Sync idToken into module-level var so helper functions can access it
   React.useEffect(() => { _idToken = idToken; }, [idToken]);
 
@@ -412,6 +442,11 @@ export default function Upload({ onNavigate, idToken = "" }: { onNavigate?: (pag
   const [uploading, setUploading] = useState(false);
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [allDone, setAllDone] = useState(false);
+
+  // ── Payment dialog state ────────────────────────────────────────────────────
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+  const [estimatedPageCount, setEstimatedPageCount] = useState(0);
+  const [scanningPages, setScanningPages] = useState(false);
 
   const addFiles = useCallback((newFiles: File[]) => {
     const items = newFiles.map((f: File) => ({
@@ -425,9 +460,8 @@ export default function Upload({ onNavigate, idToken = "" }: { onNavigate?: (pag
     }));
     setFileItems((prev: any[]) => [...prev, ...items]);
     setAllDone(false);
-    // Auto-suggest folder from filename if folder is currently empty
     setFolder((prev: string) => {
-      if (prev.trim()) return prev; // don't overwrite user's existing folder
+      if (prev.trim()) return prev;
       for (const f of newFiles) {
         const suggested = inferFolderFromFilename(f.name);
         if (suggested) return suggested;
@@ -527,7 +561,6 @@ export default function Upload({ onNavigate, idToken = "" }: { onNavigate?: (pag
   };
 
   const handleRetry = async (id: string) => {
-    // Reset item to pending then re-upload it
     const item = fileItems.find((f: any) => f.id === id);
     if (!item) return;
     updateItem(id, { status: "pending", error: undefined, progress: 0 });
@@ -539,7 +572,43 @@ export default function Upload({ onNavigate, idToken = "" }: { onNavigate?: (pag
     }
   };
 
-  const handleUploadAll = async () => {
+  // ── Scan pages and show payment dialog ───────────────────────────────────────
+  const scanAndShowPayment = async () => {
+    setScanningPages(true);
+    setGlobalError(null);
+    try {
+      const pendingFiles = fileItems.filter((f: any) => f.status === "pending");
+      const pageCounts = await Promise.all(pendingFiles.map((f: any) => countPdfPages(f.file)));
+      const totalPages = pageCounts.reduce((sum, n) => sum + n, 0);
+      setEstimatedPageCount(totalPages);
+      setShowPaymentDialog(true);
+    } catch (err: any) {
+      setGlobalError("Failed to scan pages: " + err.message);
+    } finally {
+      setScanningPages(false);
+    }
+  };
+
+  // ── Handle payment proceed — deduct credits then upload ─────────────────────
+  const handlePaymentProceed = async (mode: string) => {
+    setShowPaymentDialog(false);
+    if (mode === "credits" || mode === "stripe_paid") {
+      // Deduct credits for non-free users
+      if (!isFreeUser) {
+        try {
+          await stripeApiCall("/stripe/deduct", "POST", { pages: estimatedPageCount });
+        } catch (err: any) {
+          setGlobalError("Credit deduction failed: " + err.message);
+          return;
+        }
+      }
+      // Start the actual upload
+      handleUploadAllActual();
+    }
+  };
+
+  // ── Actual upload logic (called after payment is confirmed) ──────────────────
+  const handleUploadAllActual = async () => {
     const pending = fileItems.filter((f: any) => f.status === "pending");
     if (!pending.length) return;
     setUploading(true);
@@ -563,6 +632,21 @@ export default function Upload({ onNavigate, idToken = "" }: { onNavigate?: (pag
     await Promise.all(Array.from({ length: CONCURRENCY }, (_: any, i: number) => runNext(i)));
     setUploading(false);
     setAllDone(true);
+  };
+
+  // ── Handle upload button click — gate behind payment ────────────────────────
+  const handleUploadAll = async () => {
+    const pending = fileItems.filter((f: any) => f.status === "pending");
+    if (!pending.length) return;
+
+    // Free users skip the payment dialog
+    if (isFreeUser) {
+      handleUploadAllActual();
+      return;
+    }
+
+    // Non-free users: scan pages and show payment dialog
+    await scanAndShowPayment();
   };
 
   const pendingCount   = fileItems.filter((f: any) => f.status === "pending").length;
@@ -622,12 +706,12 @@ export default function Upload({ onNavigate, idToken = "" }: { onNavigate?: (pag
           onDragOver={handleDrag}
           onDragLeave={handleDrag}
           onDrop={handleDrop}
-          onClick={() => !uploading && inputRef.current?.click()}
+          onClick={() => !uploading && !scanningPages && inputRef.current?.click()}
           className={`relative border-2 border-dashed rounded-xl px-6 py-12 text-center cursor-pointer transition-colors ${
             dragActive
               ? "border-blue-400 bg-blue-50"
               : "border-slate-300 bg-white hover:border-blue-300 hover:bg-slate-50"
-          } ${uploading ? "pointer-events-none opacity-60" : ""}`}
+          } ${uploading || scanningPages ? "pointer-events-none opacity-60" : ""}`}
         >
           <input
             ref={inputRef}
@@ -637,13 +721,22 @@ export default function Upload({ onNavigate, idToken = "" }: { onNavigate?: (pag
             className="hidden"
             onChange={handleFileInput}
           />
-          <UploadIcon className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-          <p className="text-slate-600 font-medium">
-            Drop PDFs here or <span className="text-blue-600 underline underline-offset-2">click to browse</span>
-          </p>
-          <p className="text-xs text-slate-400 mt-1">
-            PDF, JPG, PNG — Max {MAX_FILE_SIZE_MB} MB — PDFs over {SPLIT_THRESHOLD_MB} MB auto-split
-          </p>
+          {scanningPages ? (
+            <>
+              <Loader2 className="w-10 h-10 text-blue-400 mx-auto mb-3 animate-spin" />
+              <p className="text-slate-600 font-medium">Scanning pages…</p>
+            </>
+          ) : (
+            <>
+              <UploadIcon className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+              <p className="text-slate-600 font-medium">
+                Drop PDFs here or <span className="text-blue-600 underline underline-offset-2">click to browse</span>
+              </p>
+              <p className="text-xs text-slate-400 mt-1">
+                PDF, JPG, PNG — Max {MAX_FILE_SIZE_MB} MB — PDFs over {SPLIT_THRESHOLD_MB} MB auto-split
+              </p>
+            </>
+          )}
         </div>
 
         {/* Global error */}
@@ -690,11 +783,13 @@ export default function Upload({ onNavigate, idToken = "" }: { onNavigate?: (pag
         {pendingCount > 0 && (
           <Button
             onClick={handleUploadAll}
-            disabled={uploading}
+            disabled={uploading || scanningPages}
             className="w-full h-12 text-base font-semibold bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 shadow-md"
           >
             {uploading ? (
               <><Loader2 className="w-5 h-5 mr-2 animate-spin" />Uploading…</>
+            ) : scanningPages ? (
+              <><Loader2 className="w-5 h-5 mr-2 animate-spin" />Scanning pages…</>
             ) : (
               <><UploadIcon className="w-5 h-5 mr-2" />Upload {pendingCount} File{pendingCount !== 1 ? "s" : ""}</>
             )}
@@ -721,7 +816,16 @@ export default function Upload({ onNavigate, idToken = "" }: { onNavigate?: (pag
         )}
 
       </div>
+
+      {/* Payment Dialog */}
+      <PagePaymentDialog
+        open={showPaymentDialog}
+        onClose={() => setShowPaymentDialog(false)}
+        estimatedPages={estimatedPageCount}
+        onProceed={handlePaymentProceed}
+        idToken={idToken}
+        isFreeUser={isFreeUser}
+      />
     </div>
   );
 }
-
