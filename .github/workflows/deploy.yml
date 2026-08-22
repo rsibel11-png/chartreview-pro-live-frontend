@@ -1,4 +1,4 @@
-name: Deploy Native Frontend to S3 + CloudFront
+name: Deploy Live Frontend to S3 + CloudFront
 
 on:
   push:
@@ -35,9 +35,9 @@ jobs:
           ls -la build/
           ls -la build/static/js/ || echo "No static/js directory!"
           echo "=== Syncing to S3 ==="
-          aws s3 sync build/ s3://chartreview-native-files-prod --delete --no-progress
+          aws s3 sync build/ s3://chartreview-pro-live-frontend --delete --no-progress
           echo "=== Verifying JS in S3 ==="
-          aws s3 ls s3://chartreview-native-files-prod/static/js/ || echo "WARNING: static/js not found in S3"
+          aws s3 ls s3://chartreview-pro-live-frontend/static/js/ || echo "WARNING: static/js not found in S3"
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -45,7 +45,7 @@ jobs:
 
       - name: Invalidate CloudFront
         run: |
-          aws cloudfront create-invalidation --distribution-id E11EHAODHRLCPH --paths "/*"
+          aws cloudfront create-invalidation --distribution-id E2STTW7YKJZV1U --paths "/*"
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
