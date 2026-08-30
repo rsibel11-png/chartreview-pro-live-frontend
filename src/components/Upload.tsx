@@ -1,4 +1,5 @@
 // Upload.tsx — chartreview-pro-live-frontend
+// Updated: 2026-08-30 — Removed auto-split mention from dropzone hint text (production only)
 // Updated: 2026-08-30 — Simplified status messages for production (hide internal pipeline steps)
 // Updated: 2026-08-22 — Integrated Stripe per-page payment flow
 // Ported: 2026-05-03 — CRA/TypeScript port of Upload v16
@@ -722,7 +723,7 @@ export default function Upload({ onNavigate, idToken = "", isFreeUser = false }:
                 Drop PDFs here or <span className="text-blue-600 underline underline-offset-2">click to browse</span>
               </p>
               <p className="text-xs text-slate-400 mt-1">
-                PDF, JPG, PNG — Max {MAX_FILE_SIZE_MB} MB — PDFs over {SPLIT_THRESHOLD_MB} MB auto-split
+                PDF, JPG, PNG — Max {MAX_FILE_SIZE_MB} MB
               </p>
             </>
           )}
