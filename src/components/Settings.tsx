@@ -1,4 +1,6 @@
 // Settings.tsx — chartreview-native-frontend
+// Updated: 2026-08-30 — Fixed PDF letterhead: pdfjs-dist 3.11.174 has no ESM build, dynamic import() returned no exports.
+//   Now uses classic <script> tag loader (_getPdfjs), same working pattern as Library.tsx.
 // Updated: 2026-08-30 — Removed auto-detect feature, letterhead now accepts PDF (rendered to PNG via pdf.js)
 
 import React, { useState, useEffect, useRef } from 'react';
@@ -35,6 +37,28 @@ export function getMacros(): { id: string; name: string; content: string; sectio
 function saveMacros(macros: any[]) {
   localStorage.setItem(LS_MACROS, JSON.stringify(macros));
 }
+
+// ── PDF.js loader (classic script tag — pdfjs-dist 3.11.174 has no ESM build) ──
+// Mirrors the working _getPdfjs pattern already used in Library.tsx.
+declare global { interface Window { pdfjsLib: any; } }
+let _pdfjs: any = null;
+const _getPdfjs = () => new Promise((resolve, reject) => {
+  if (_pdfjs) return resolve(_pdfjs);
+  if (window.pdfjsLib) {
+    _pdfjs = window.pdfjsLib;
+    _pdfjs.GlobalWorkerOptions.workerSrc = "";
+    return resolve(_pdfjs);
+  }
+  const script = document.createElement("script");
+  script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+  script.onload = () => {
+    _pdfjs = window.pdfjsLib;
+    _pdfjs.GlobalWorkerOptions.workerSrc = "";
+    resolve(_pdfjs);
+  };
+  script.onerror = () => reject(new Error("pdfjs failed to load"));
+  document.head.appendChild(script);
+});
 
 // ── Section labels ─────────────────────────────────────────────────────────────
 const SECTION_LABELS: Record<string, { label: string; color: string }> = {
@@ -184,14 +208,13 @@ export default function Settings({ onNavigate, idToken }: { onNavigate?: (p: str
     if (!file) return;
     setUploadingLetterhead(true);
 
-    // If PDF, render page 1 to PNG via pdf.js
+    // If PDF, render page 1 to PNG via pdf.js (classic script load — matches Library.tsx's _getPdfjs pattern;
+    // pdfjs-dist 3.11.174 ships UMD only, no ESM build, so dynamic import() does not work here)
     const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
     if (isPdf) {
       try {
         const arrayBuffer = await file.arrayBuffer();
-        // Load pdf.js from CDN
-        const pdfjs: any = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js' as any);
-        pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+        const pdfjs: any = await _getPdfjs();
         const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
         const page = await pdf.getPage(1);
         const viewport = page.getViewport({ scale: 2 });
