@@ -695,7 +695,7 @@ const normalizePTSetting = (setting: string): string => {
     if (selectedDocs.length === 0) { setError("Please select at least one document."); return; }
     setShowDialog(false);
     setSelectedDocuments([]);
-    genStore.set({ running: true, statusMsg: "Starting...", completionMsg: "", error: null, elapsedSeconds: 0 });
+    genStore.set({ running: true, statusMsg: "Generating summary…", completionMsg: "", error: null, elapsedSeconds: 0 });
     if (genStore.state.timerHandle) clearInterval(genStore.state.timerHandle);
     let elapsed = 0;
     const timerHandle = setInterval(() => { elapsed += 1; genStore.set({ elapsedSeconds: elapsed }); }, 1000);
@@ -720,13 +720,13 @@ const normalizePTSetting = (setting: string): string => {
         clearInterval(timerHandle);
         return;
       }
-      genStore.set({ statusMsg: `Sending ${docIds.length} documents to ChartReview AI...` });
+      genStore.set({ statusMsg: "Generating summary…" });
       const startRes = await awsProxy('/summaries/generate', 'POST', {
         doc_ids: docIds, patient_name: '', run_vi_prepass: true, include_all_pt: includeAllPt,
       });
       const job_id = startRes?.job_id;
       if (!job_id) throw new Error('No job_id returned from generateSummaryStart');
-      genStore.set({ statusMsg: 'Sending documents for processing...' });
+      genStore.set({ statusMsg: "Generating summary…" });
       let jobResult: any = null;
       const POLL_INTERVAL_MS = 5000;
       const MAX_POLLS = 360;
@@ -735,7 +735,7 @@ const normalizePTSetting = (setting: string): string => {
         const jobStatus = await awsProxy(`/jobs/${job_id}`, 'GET');
         if (jobStatus?.status === 'complete') { jobResult = jobStatus.result; break; }
         if (jobStatus?.status === 'failed') throw new Error('Generation failed: ' + (jobStatus?.error_message || 'unknown error'));
-        genStore.set({ statusMsg: jobStatus?.status_msg || 'Processing...' });
+        genStore.set({ statusMsg: "Generating summary…" });
       }
       if (!jobResult) throw new Error('Generation timed out after 30 minutes');
       const rawVisits: any[] = Array.isArray(jobResult.visits) ? jobResult.visits : [];
@@ -749,7 +749,7 @@ const normalizePTSetting = (setting: string): string => {
       // Backend coordinator already saved the summary record (with case_number, polishing status).
       // Only POST if aws_summary_id is absent (e.g. older backend without coordinator save).
       if (!jobResult.aws_summary_id) {
-        genStore.set({ statusMsg: 'Saving summary...' });
+        genStore.set({ statusMsg: "Generating summary…" });
         try {
           await awsProxy('/summaries', 'POST', {
             patient_name: patientName,
@@ -1181,7 +1181,7 @@ const normalizePTSetting = (setting: string): string => {
       {generatingSummary && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center gap-4">
           <Loader2 className="w-5 h-5 text-blue-600 animate-spin flex-shrink-0" />
-          <div className="flex-1"><p className="text-sm font-medium text-blue-800">{statusMsg || "Generating..."}</p></div>
+          <div className="flex-1"><p className="text-sm font-medium text-blue-800">{statusMsg || "Generating summary…"}</p></div>
           <span className="text-sm font-mono text-blue-600">
             {Math.floor(elapsedSeconds / 60)}:{String(elapsedSeconds % 60).padStart(2, "0")}
           </span>
