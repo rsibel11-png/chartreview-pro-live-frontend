@@ -1044,9 +1044,9 @@ const normalizePTSetting = (setting: string): string => {
         });
         const docWithLetterhead = new Document({
           sections: [{
-            // Generous margins keep body text clear of typical letterhead header/footer bands.
+            // Generous margins keep body text clear of typical letterhead header/footer bands. Bottom bumped to 1.5" to prevent footer overlap.
             // If a specific letterhead's bands are taller/shorter, these may need adjusting.
-            properties: { page: { margin: { top: 2160, bottom: 1440, left: 1080, right: 1080 } } },
+            properties: { page: { margin: { top: 2160, bottom: 2160, left: 1080, right: 1080 } } },
             headers: { default: new Header({ children: [new Paragraph({ children: [headerImg] })] }) },
             children: sections_content,
           }],
