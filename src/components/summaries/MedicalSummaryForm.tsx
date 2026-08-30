@@ -1,11 +1,14 @@
 // MedicalSummaryForm.tsx
+// Updated: 2026-08-30 — Ported MacroPicker from original Base44 app, wired into IME/Chart Review/Pre-Visit/Physical Exam fields
 // Updated: 2026-07-22 — sync visit_count to visits.length on every save so library card stays accurate after PT/OT consolidation (keep first & last per facility) — chartreview-native-frontend
-// Ported: 2026-05-03 — CRA/TypeScript, all shadcn/ui inlined, MacroPicker/DuplicateVisitDetector/PTConsolidationHelper stripped
+// Ported: 2026-05-03 — CRA/TypeScript, all shadcn/ui inlined, DuplicateVisitDetector/PTConsolidationHelper stripped
+// MacroPicker restored: 2026-08-30 (adapted for localStorage)
 // awsProxy rewired to direct fetch (no Base44 relay)
 
 import React, { useState, useEffect } from "react";
 import DuplicateVisitDetector from "./DuplicateVisitDetector";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import MacroPicker from "./MacroPicker";
 
 // ── Env vars ──────────────────────────────────────────────────────────────────
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || "";
@@ -501,6 +504,11 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
                 value={formData.ime_note || ''}
                 onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData((prev: any) => ({ ...prev, ime_note: e.target.value }))}
                 rows={3} />
+              <MacroPicker
+                section="header"
+                currentText={formData.ime_note || ''}
+                onInsert={(text: string) => setFormData((prev: any) => ({ ...prev, ime_note: text }))}
+              />
             </CardContent>
           </Card>
 
@@ -516,6 +524,11 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
                 value={formData.chart_review_note || ''}
                 onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData((prev: any) => ({ ...prev, chart_review_note: e.target.value }))}
                 rows={3} />
+              <MacroPicker
+                section="header"
+                currentText={formData.chart_review_note || ''}
+                onInsert={(text: string) => setFormData((prev: any) => ({ ...prev, chart_review_note: text }))}
+              />
             </CardContent>
           </Card>
 
@@ -604,6 +617,11 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
                           value={visit.pre_note || ''}
                           onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateVisit(index, 'pre_note', e.target.value)}
                           rows={2} />
+                        <MacroPicker
+                          section="pre_note"
+                          currentText={visit.pre_note || ''}
+                          onInsert={(text: string) => updateVisit(index, 'pre_note', text)}
+                        />
                       </div>
 
                       {/* Dates */}
@@ -685,6 +703,11 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
                         <Textarea placeholder="Key pertinent positives only"
                           value={visit.physical_exam_findings || ''}
                           onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateVisit(index, 'physical_exam_findings', e.target.value)} rows={4} />
+                        <MacroPicker
+                          section="footer"
+                          currentText={visit.physical_exam_findings || ''}
+                          onInsert={(text: string) => updateVisit(index, 'physical_exam_findings', text)}
+                        />
                       </div>
 
                       {/* Imaging */}
