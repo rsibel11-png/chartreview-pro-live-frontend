@@ -1,4 +1,5 @@
 // Settings.tsx — chartreview-native-frontend
+// Updated: 2026-08-30 — Add diagnostic logging to letterhead margin detection
 // Updated: 2026-08-30 — Fix letterhead margin detection: use band-based approach (min non-white pixels per row/col)
 //   to filter out thin border frames and anti-aliasing artifacts that caused all margins to return minimum (720).
 // Updated: 2026-08-30 — Fix TS2350: replaced new Image() with document.createElement('img') for CRA type check.
@@ -169,6 +170,13 @@ function detectLetterheadMargins(canvas: HTMLCanvasElement): { top: number; bott
   const leftTwips = Math.min(maxMargin, Math.max(minMargin, Math.round((leftBoundary + PADDING_PX) * twipsPerPxX)));
   const rightTwips = Math.min(maxMargin, Math.max(minMargin, Math.round((width - 1 - rightBoundary + PADDING_PX) * twipsPerPxX)));
 
+  // DEBUG: log detection results
+  console.log('[CRP Margins] canvas:', width, 'x', height, 'DPI:', dpiX.toFixed(0), 'x', dpiY.toFixed(0));
+  console.log('[CRP Margins] MIN_STRONG:', MIN_STRONG, 'PADDING_PX:', PADDING_PX);
+  console.log('[CRP Margins] topBoundary:', topBoundary, 'bottomBoundary:', bottomBoundary, 'leftBoundary:', leftBoundary, 'rightBoundary:', rightBoundary);
+  console.log('[CRP Margins] rowStrength[0]:', rowStrength[0], 'rowStrength[50]:', rowStrength[50], 'rowStrength[100]:', rowStrength[100], 'rowStrength[150]:', rowStrength[150], 'rowStrength[200]:', rowStrength[200], 'rowStrength[792]:', rowStrength[792]);
+  console.log('[CRP Margins] rowStrength[1450]:', rowStrength[1450], 'rowStrength[1500]:', rowStrength[1500], 'rowStrength[1583]:', rowStrength[1583]);
+  console.log('[CRP Margins] result:', { top: topTwips, bottom: bottomTwips, left: leftTwips, right: rightTwips });
   return { top: topTwips, bottom: bottomTwips, left: leftTwips, right: rightTwips };
 }
 
