@@ -1,4 +1,5 @@
 // PagePaymentDialog.tsx — chartreview-pro-live-frontend
+// Updated: 2026-08-30 — Pricing updated to match InPractice AI competitor ($0.10–$0.05/page)
 // Updated: 2026-08-22 — Port of PagePaymentDialog from Base44 app to CRA/TypeScript
 // Uses awsProxy pattern (API Gateway + Cognito) instead of base44 SDK
 
@@ -12,30 +13,30 @@ const ORG_ID = process.env.REACT_APP_ORG_ID || "";
 
 // ── Tiered pricing (matches backend) ──────────────────────────────────────────
 function getPricePerPage(pages: number): number {
-  if (pages <= 100) return 0.60;
-  if (pages <= 1000) return 0.55;
-  if (pages <= 5000) return 0.50;
-  if (pages <= 10000) return 0.45;
-  return 0.40;
+  if (pages <= 1000) return 0.10;
+  if (pages <= 5000) return 0.09;
+  if (pages <= 20000) return 0.07;
+  if (pages <= 100000) return 0.06;
+  return 0.05;
 }
 
 function getTierLabel(pages: number): string {
-  if (pages <= 100) return "Tier 1 (≤100 pages)";
-  if (pages <= 1000) return "Tier 2 (101–1,000 pages)";
-  if (pages <= 5000) return "Tier 3 (1,001–5,000 pages)";
-  if (pages <= 10000) return "Tier 4 (5,001–10,000 pages)";
-  return "Tier 5 (10,001+ pages)";
+  if (pages <= 1000) return "Starter (≤1,000 pages)";
+  if (pages <= 5000) return "Pro (1,001–5,000 pages)";
+  if (pages <= 20000) return "Growth (5,001–20,000 pages)";
+  if (pages <= 100000) return "Scale (20,001–100,000 pages)";
+  return "Enterprise (100,001+ pages)";
 }
 
 function getTierColor(pages: number): string {
-  if (pages <= 100) return "bg-slate-100 text-slate-700";
-  if (pages <= 1000) return "bg-blue-100 text-blue-700";
-  if (pages <= 5000) return "bg-cyan-100 text-cyan-700";
-  if (pages <= 10000) return "bg-green-100 text-green-700";
+  if (pages <= 1000) return "bg-slate-100 text-slate-700";
+  if (pages <= 5000) return "bg-blue-100 text-blue-700";
+  if (pages <= 20000) return "bg-cyan-100 text-cyan-700";
+  if (pages <= 100000) return "bg-green-100 text-green-700";
   return "bg-emerald-100 text-emerald-700";
 }
 
-const BUNDLE_SIZES = [100, 250, 500, 1000, 2500, 5000, 10000, 25000];
+const BUNDLE_SIZES = [1000, 5000, 20000, 100000, 200000];
 
 function getBundleOptions(neededPages: number): number[] {
   return BUNDLE_SIZES.filter(size => size > neededPages).slice(0, 4);
