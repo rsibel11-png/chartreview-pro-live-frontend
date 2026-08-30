@@ -1,4 +1,6 @@
 // Settings.tsx — chartreview-native-frontend
+// Updated: 2026-08-30 — Fix letterhead margin detection: use band-based approach (min non-white pixels per row/col)
+//   to filter out thin border frames and anti-aliasing artifacts that caused all margins to return minimum (720).
 // Updated: 2026-08-30 — Fix TS2350: replaced new Image() with document.createElement('img') for CRA type check.
 // Updated: 2026-08-30 — Auto-detect letterhead margins by scanning rendered image pixel data.
 //   Margins stored in localStorage and used by export to set page margins dynamically.
@@ -87,53 +89,74 @@ function detectLetterheadMargins(canvas: HTMLCanvasElement): { top: number; bott
   const dpiY = height / 11;
   const twipsPerPxX = 1440 / dpiX;
   const twipsPerPxY = 1440 / dpiY;
-  const PADDING_PX = Math.round(dpiY * 0.2); // ~0.2 inch breathing room
+  const PADDING_PX = Math.round(dpiY * 0.25); // ~0.25 inch breathing room
 
-  // Find top content boundary (first row with any non-white pixel)
-  let topPx = 0;
-  outerTop: for (let y = 0; y < height; y++) {
+  // Minimum non-white pixels per row/column to count as "strong content"
+  // This filters out thin border frames (e.g., 4-8px borders) and anti-aliasing artifacts.
+  const MIN_STRONG = Math.max(15, Math.round(width * 0.01));
+
+  // Count non-white pixels per row
+  const rowStrength: number[] = new Array(height);
+  for (let y = 0; y < height; y++) {
+    let count = 0;
     for (let x = 0; x < width; x++) {
       const i = (y * width + x) * 4;
       if (data[i] < WHITE_THRESHOLD || data[i+1] < WHITE_THRESHOLD || data[i+2] < WHITE_THRESHOLD) {
-        topPx = y;
-        break outerTop;
+        count++;
       }
+    }
+    rowStrength[y] = count;
+  }
+
+  // Find header band: scan top half, find the LAST strong row (where header content ends)
+  const midpoint = Math.floor(height / 2);
+  let topBoundary = 0;
+  for (let y = 0; y < midpoint; y++) {
+    if (rowStrength[y] >= MIN_STRONG) {
+      topBoundary = y;
     }
   }
 
-  // Find bottom content boundary (last row with any non-white pixel)
-  let bottomPx = height - 1;
-  outerBottom: for (let y = height - 1; y >= 0; y--) {
-    for (let x = 0; x < width; x++) {
-      const i = (y * width + x) * 4;
-      if (data[i] < WHITE_THRESHOLD || data[i+1] < WHITE_THRESHOLD || data[i+2] < WHITE_THRESHOLD) {
-        bottomPx = y;
-        break outerBottom;
-      }
+  // Find footer band: scan bottom half, find the FIRST strong row (where footer content starts)
+  let bottomBoundary = height - 1;
+  for (let y = height - 1; y >= midpoint; y--) {
+    if (rowStrength[y] >= MIN_STRONG) {
+      bottomBoundary = y;
+      break;
     }
   }
 
-  // Find left content boundary
-  let leftPx = 0;
-  outerLeft: for (let x = 0; x < width; x++) {
-    for (let y = 0; y < height; y++) {
+  // Count non-white pixels per column (in the middle region only, excluding header/footer bands)
+  // This avoids counting full-width header/footer text as side content
+  const midStart = Math.min(topBoundary + 20, midpoint);
+  const midEnd = Math.max(bottomBoundary - 20, midpoint);
+  const colStrength: number[] = new Array(width);
+  for (let x = 0; x < width; x++) {
+    let count = 0;
+    for (let y = midStart; y < midEnd; y++) {
       const i = (y * width + x) * 4;
       if (data[i] < WHITE_THRESHOLD || data[i+1] < WHITE_THRESHOLD || data[i+2] < WHITE_THRESHOLD) {
-        leftPx = x;
-        break outerLeft;
+        count++;
       }
+    }
+    colStrength[x] = count;
+  }
+
+  // Find left boundary: last strong column in left 50% (where left border/content ends)
+  const midX = Math.floor(width / 2);
+  let leftBoundary = 0;
+  for (let x = 0; x < midX; x++) {
+    if (colStrength[x] >= MIN_STRONG) {
+      leftBoundary = x;
     }
   }
 
-  // Find right content boundary
-  let rightPx = width - 1;
-  outerRight: for (let x = width - 1; x >= 0; x--) {
-    for (let y = 0; y < height; y++) {
-      const i = (y * width + x) * 4;
-      if (data[i] < WHITE_THRESHOLD || data[i+1] < WHITE_THRESHOLD || data[i+2] < WHITE_THRESHOLD) {
-        rightPx = x;
-        break outerRight;
-      }
+  // Find right boundary: first strong column in right 50% (where right border/content starts)
+  let rightBoundary = width - 1;
+  for (let x = width - 1; x >= midX; x--) {
+    if (colStrength[x] >= MIN_STRONG) {
+      rightBoundary = x;
+      break;
     }
   }
 
@@ -141,10 +164,10 @@ function detectLetterheadMargins(canvas: HTMLCanvasElement): { top: number; bott
   const minMargin = 720;   // 0.5 inch minimum
   const maxMargin = 5760;  // 4 inch maximum
 
-  const topTwips = Math.min(maxMargin, Math.max(minMargin, Math.round((topPx + PADDING_PX) * twipsPerPxY)));
-  const bottomTwips = Math.min(maxMargin, Math.max(minMargin, Math.round((height - 1 - bottomPx + PADDING_PX) * twipsPerPxY)));
-  const leftTwips = Math.min(maxMargin, Math.max(minMargin, Math.round((leftPx + PADDING_PX) * twipsPerPxX)));
-  const rightTwips = Math.min(maxMargin, Math.max(minMargin, Math.round((width - 1 - rightPx + PADDING_PX) * twipsPerPxX)));
+  const topTwips = Math.min(maxMargin, Math.max(minMargin, Math.round((topBoundary + PADDING_PX) * twipsPerPxY)));
+  const bottomTwips = Math.min(maxMargin, Math.max(minMargin, Math.round((height - 1 - bottomBoundary + PADDING_PX) * twipsPerPxY)));
+  const leftTwips = Math.min(maxMargin, Math.max(minMargin, Math.round((leftBoundary + PADDING_PX) * twipsPerPxX)));
+  const rightTwips = Math.min(maxMargin, Math.max(minMargin, Math.round((width - 1 - rightBoundary + PADDING_PX) * twipsPerPxX)));
 
   return { top: topTwips, bottom: bottomTwips, left: leftTwips, right: rightTwips };
 }
