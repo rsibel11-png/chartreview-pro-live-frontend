@@ -1,15 +1,15 @@
 // Upload.tsx — chartreview-pro-live-frontend
-// Updated: 2026-08-30 — Removed auto-split mention from dropzone hint text (production only)
 // Updated: 2026-08-30 — Simplified status messages for production (hide internal pipeline steps)
 // Updated: 2026-08-22 — Integrated Stripe per-page payment flow
 // Ported: 2026-05-03 — CRA/TypeScript port of Upload v16
 // Fixes applied: env vars, inlined UI components, removed useNavigate/createPageUrl,
 //   opts:any, _pdfLib:any, all callback params typed, Array.from for sets
 
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import toast from "react-hot-toast";
 import PagePaymentDialog from "./PagePaymentDialog";
+import { _splitBridge } from "./SplitPdf";
 
 // ── Env vars (CRA) ────────────────────────────────────────────────────────────
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || "";
@@ -427,6 +427,23 @@ export default function Upload({ onNavigate, idToken = "", isFreeUser = false }:
 
   const inputRef = useRef<HTMLInputElement>(null);
   const [fileItems, setFileItems] = useState<any[]>([]);
+
+  // Read split bridge on mount — if user clicked "Send to Upload" from SplitPdf
+  useEffect(() => {
+    if (_splitBridge.files && _splitBridge.files.length > 0) {
+      const bridgeFiles = _splitBridge.files;
+      _splitBridge.files = null;
+      const items = bridgeFiles.map((f: File) => ({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name: f.name,
+        size: f.size,
+        status: "pending",
+        progress: 0,
+        file: f,
+      }));
+      setFileItems(items);
+    }
+  }, []);
   const [dragActive, setDragActive] = useState(false);
   const [folder, setFolder] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -723,7 +740,7 @@ export default function Upload({ onNavigate, idToken = "", isFreeUser = false }:
                 Drop PDFs here or <span className="text-blue-600 underline underline-offset-2">click to browse</span>
               </p>
               <p className="text-xs text-slate-400 mt-1">
-                PDF, JPG, PNG — Max {MAX_FILE_SIZE_MB} MB
+                PDF, JPG, PNG — Max {MAX_FILE_SIZE_MB} MB — PDFs over {SPLIT_THRESHOLD_MB} MB auto-split
               </p>
             </>
           )}
