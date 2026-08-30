@@ -282,6 +282,8 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
   const [deleteAllDialog, setDeleteAllDialog] = useState(false);
   const [queueProgress, setQueueProgress] = useState<any>(null);
   const [showVisitIndexDialog, setShowVisitIndexDialog] = useState(false);
+  const [exportChoiceSummary, setExportChoiceSummary] = useState<any>(null);
+  const [exportFormatChoice, setExportFormatChoice] = useState<'letterhead' | 'plain'>('letterhead');
   const [visitIndexRunning, setVisitIndexRunning] = useState(false);
   const [visitIndexData, setVisitIndexData] = useState<any>(null);
   const [visitIndexView, setVisitIndexView] = useState<'chrono' | 'grouped'>('chrono');
@@ -788,7 +790,19 @@ const normalizePTSetting = (setting: string): string => {
   };
 
   // ── Export to Word ─────────────────────────────────────────────────────────
-  const exportToWord = async (summary: any) => {
+  // Updated: 2026-08-30 — Replaced window.confirm with an in-app dialog offering a format dropdown
+  // (Letterhead vs Plain Word Document). If no letterhead is configured, skip the dialog and export plain.
+  const handleExportClick = (summary: any) => {
+    const { letterheadUrl } = getExportPrefs();
+    if (!letterheadUrl) {
+      exportToWord(summary, false);
+      return;
+    }
+    setExportFormatChoice('letterhead');
+    setExportChoiceSummary(summary);
+  };
+
+  const exportToWord = async (summary: any, useLetterhead: boolean = false) => {
     let freshSummary = summary;
     try {
       const fetched = await awsProxy(`/summaries/${summary.aws_summary_id || summary.id}`, 'GET');
@@ -1024,7 +1038,7 @@ const normalizePTSetting = (setting: string): string => {
     // (not squeezed into a small header band) so the summary appears to be written on the
     // letterhead itself, matching the original PDF/image design edge-to-edge.
     const { letterheadUrl, letterheadMargins } = getExportPrefs();
-    if (letterheadUrl && window.confirm('Apply your letterhead as a full-page background on this export?')) {
+    if (useLetterhead && letterheadUrl) {
       try {
         const imgResp = await fetch(letterheadUrl);
         const imgBlob = await imgResp.blob();
@@ -1438,7 +1452,7 @@ const normalizePTSetting = (setting: string): string => {
                       <Edit className="w-4 h-4" />
                     </Button>
                     <Button variant="outline" size="sm" className="flex-1" title="Export to Word"
-                      onClick={() => exportToWord(summary)}>
+                      onClick={() => handleExportClick(summary)}>
                       <Download className="w-4 h-4" />
                     </Button>
                     <Button variant="outline" size="sm" className="flex-1" title="Remove duplicate visits"
@@ -1647,11 +1661,45 @@ const normalizePTSetting = (setting: string): string => {
         </AlertDialogContent>
       </AlertDialog>
 
+      {/* Export Format Dialog — Updated: 2026-08-30 — replaces window.confirm letterhead prompt */}
+      <AlertDialog open={!!exportChoiceSummary} onOpenChange={(v: boolean) => { if (!v) setExportChoiceSummary(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Export to Word</AlertDialogTitle>
+            <AlertDialogDescription>Choose how you'd like this summary exported.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="mt-2">
+            <label className="text-sm font-medium text-slate-700 block mb-1.5">Export format</label>
+            <select
+              value={exportFormatChoice}
+              onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setExportFormatChoice(e.target.value as 'letterhead' | 'plain')}
+              className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm text-slate-900 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="letterhead">Use my letterhead (full-page background)</option>
+              <option value="plain">Plain Word document (no letterhead)</option>
+            </select>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setExportChoiceSummary(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const summaryToExport = exportChoiceSummary;
+                setExportChoiceSummary(null);
+                exportToWord(summaryToExport, exportFormatChoice === 'letterhead');
+              }}
+              className="bg-blue-600 hover:bg-blue-700"
+            >
+              Export
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* View Summary */}
       {viewingSummary && (
         <SummaryViewer summary={viewingSummary} onClose={() => setViewingSummary(null)}
           onEdit={() => { setEditing(true); setEditingSummary(normalizeSummaryForEdit(viewingSummary)); setViewingSummary(null); }}
-          onExport={() => exportToWord(viewingSummary)} />
+          onExport={() => handleExportClick(viewingSummary)} />
       )}
 
       {/* Edit Summary */}
