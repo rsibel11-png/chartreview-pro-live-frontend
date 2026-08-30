@@ -97,11 +97,15 @@ function detectLetterheadMargins(canvas: HTMLCanvasElement): { top: number; bott
   // This filters out thin border frames (e.g., 4-8px borders) and anti-aliasing artifacts.
   const MIN_STRONG = Math.max(15, Math.round(width * 0.01));
 
-  // Count non-white pixels per row
+  // Count non-white pixels per row — but only in the CENTER 60% of the row (columns 20%-80%)
+  // This prevents left/right sidebars from inflating row counts and breaking header/footer detection.
+  // Header/footer text lives in the center; sidebars live in the edges.
+  const colScanStart = Math.round(width * 0.2);
+  const colScanEnd = Math.round(width * 0.8);
   const rowStrength: number[] = new Array(height);
   for (let y = 0; y < height; y++) {
     let count = 0;
-    for (let x = 0; x < width; x++) {
+    for (let x = colScanStart; x < colScanEnd; x++) {
       const i = (y * width + x) * 4;
       if (data[i] < WHITE_THRESHOLD || data[i+1] < WHITE_THRESHOLD || data[i+2] < WHITE_THRESHOLD) {
         count++;
@@ -175,7 +179,7 @@ function detectLetterheadMargins(canvas: HTMLCanvasElement): { top: number; bott
 
   // DEBUG: log detection results
   console.log('[CRP Margins] canvas:', width, 'x', height, 'DPI:', dpiX.toFixed(0), 'x', dpiY.toFixed(0));
-  console.log('[CRP Margins] MIN_STRONG:', MIN_STRONG, 'PADDING_PX:', PADDING_PX);
+  console.log('[CRP Margins] MIN_STRONG:', MIN_STRONG, 'PADDING_PX:', PADDING_PX, 'colScan:', colScanStart, '-', colScanEnd);
   console.log('[CRP Margins] topBoundary:', topBoundary, 'bottomBoundary:', bottomBoundary, 'leftBoundary:', leftBoundary, 'rightBoundary:', rightBoundary);
   console.log('[CRP Margins] rowStrength[0]:', rowStrength[0], 'rowStrength[50]:', rowStrength[50], 'rowStrength[100]:', rowStrength[100], 'rowStrength[150]:', rowStrength[150], 'rowStrength[200]:', rowStrength[200], 'rowStrength[792]:', rowStrength[792]);
   console.log('[CRP Margins] rowStrength[1450]:', rowStrength[1450], 'rowStrength[1500]:', rowStrength[1500], 'rowStrength[1583]:', rowStrength[1583]);
