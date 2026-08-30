@@ -740,7 +740,7 @@ export default function Upload({ onNavigate, idToken = "", isFreeUser = false }:
                 Drop PDFs here or <span className="text-blue-600 underline underline-offset-2">click to browse</span>
               </p>
               <p className="text-xs text-slate-400 mt-1">
-                PDF, JPG, PNG — Max {MAX_FILE_SIZE_MB} MB — PDFs over {SPLIT_THRESHOLD_MB} MB auto-split
+                PDF, JPG, PNG — Max {MAX_FILE_SIZE_MB} MB
               </p>
             </>
           )}
