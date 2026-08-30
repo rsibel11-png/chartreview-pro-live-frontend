@@ -1,10 +1,10 @@
 // Settings.tsx — chartreview-native-frontend
-// Updated: 2026-05-22 — Letterhead upload, macros manager, font export settings
+// Updated: 2026-08-30 — Removed auto-detect feature, letterhead now accepts PDF (rendered to PNG via pdf.js)
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Settings as SettingsIcon, Save, FileText, Image, Upload, X,
-  Wand2, CheckCircle2, BookOpen, Plus, Trash2
+  CheckCircle2, BookOpen, Plus, Trash2
 } from 'lucide-react';
 
 // ── Env vars ──────────────────────────────────────────────────────────────────
@@ -167,11 +167,8 @@ export default function Settings({ onNavigate, idToken }: { onNavigate?: (p: str
   const [fontSize,            setFontSize]            = useState(() => parseInt(localStorage.getItem(LS_FONT_SIZE) || '11', 10));
   const [letterheadUrl,       setLetterheadUrl]       = useState(() => localStorage.getItem(LS_LETTERHEAD) || '');
   const [uploadingLetterhead, setUploadingLetterhead] = useState(false);
-  const [analyzingFormat,     setAnalyzingFormat]     = useState(false);
-  const [formatDetected,      setFormatDetected]      = useState<{ fontFamily: string; fontSize: number; notes?: string } | null>(null);
   const [saveSuccess,         setSaveSuccess]         = useState(false);
   const letterheadInputRef = useRef<HTMLInputElement>(null);
-  const formatInputRef     = useRef<HTMLInputElement>(null);
 
   const getFreshToken = () => {
     try {
@@ -181,15 +178,42 @@ export default function Settings({ onNavigate, idToken }: { onNavigate?: (p: str
     return idToken || '';
   };
 
-  // Upload letterhead image to S3 via the /upload-letterhead endpoint
+  // Upload letterhead (image or PDF) to S3
   const handleLetterheadUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploadingLetterhead(true);
+
+    // If PDF, render page 1 to PNG via pdf.js
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    if (isPdf) {
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        // Load pdf.js from CDN
+        const pdfjs: any = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js' as any);
+        pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+        const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+        const page = await pdf.getPage(1);
+        const viewport = page.getViewport({ scale: 2 });
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext('2d')!;
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        const pngDataUrl = canvas.toDataURL('image/png');
+        setLetterheadUrl(pngDataUrl);
+      } catch (err) {
+        console.error('PDF letterhead render failed:', err);
+        alert('Could not process the PDF. Please try uploading a PNG or JPG image instead.');
+      } finally {
+        setUploadingLetterhead(false);
+        if (letterheadInputRef.current) letterheadInputRef.current.value = '';
+      }
+      return;
+    }
+
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      // Use a pre-signed URL approach: get an upload URL then PUT the file
+      // Image upload: try S3, fallback to data URL
       const res = await fetch(`${AWS_API_URL}/get-upload-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}&orgId=${ORG_ID}&purpose=letterhead`, {
         headers: { 'x-api-key': AWS_API_KEY, 'x-org-id': ORG_ID },
       });
@@ -198,42 +222,16 @@ export default function Settings({ onNavigate, idToken }: { onNavigate?: (p: str
         await fetch(upload_url, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
         setLetterheadUrl(file_url);
       } else {
-        // Fallback: store as data URL locally
         const reader = new FileReader();
-        reader.onload = ev => {
-          setLetterheadUrl(ev.target?.result as string || '');
-        };
+        reader.onload = ev => setLetterheadUrl(ev.target?.result as string || '');
         reader.readAsDataURL(file);
       }
     } catch {
-      // Fallback: data URL
       const reader = new FileReader();
       reader.onload = ev => setLetterheadUrl(ev.target?.result as string || '');
       reader.readAsDataURL(file);
     } finally {
       setUploadingLetterhead(false);
-    }
-  };
-
-  // Auto-detect font from uploaded document
-  const handleFormatUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setAnalyzingFormat(true);
-    setFormatDetected(null);
-    try {
-      // Simple heuristic: for docx, try to parse; otherwise prompt user to pick manually
-      // Since we don't have a lambda for this, we'll parse the filename + show a best guess
-      const name = file.name.toLowerCase();
-      // Detect from file — best effort without a backend: just confirm to user
-      const detectedFont = 'Calibri';
-      const detectedSize = 11;
-      setFontFamily(detectedFont);
-      setFontSize(detectedSize);
-      setFormatDetected({ fontFamily: detectedFont, fontSize: detectedSize, notes: 'Unable to auto-detect — please select manually below' });
-    } finally {
-      setAnalyzingFormat(false);
-      if (formatInputRef.current) formatInputRef.current.value = '';
     }
   };
 
@@ -283,42 +281,6 @@ export default function Settings({ onNavigate, idToken }: { onNavigate?: (p: str
           </div>
           <div className="p-6 space-y-6">
 
-            {/* Auto-detect */}
-            <div className="border border-blue-200 bg-blue-50 rounded-lg p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <Wand2 className="w-4 h-4 text-blue-600" />
-                <span className="text-sm font-semibold text-blue-900">Auto-detect from your document</span>
-              </div>
-              <p className="text-xs text-slate-600">Upload a PDF or Word document (.doc/.docx) and the app will attempt to detect its font settings and apply them to future exports.</p>
-              {formatDetected && (
-                <div className="flex items-center gap-2 text-sm text-green-800 bg-green-50 border border-green-200 rounded p-2">
-                  <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
-                  <span>
-                    {formatDetected.notes
-                      ? formatDetected.notes
-                      : <>Detected: <strong>{formatDetected.fontFamily}</strong>, <strong>{formatDetected.fontSize}pt</strong></>
-                    }
-                  </span>
-                </div>
-              )}
-              <input
-                ref={formatInputRef}
-                type="file"
-                accept=".pdf,.doc,.docx"
-                className="hidden"
-                id="format-upload"
-                onChange={handleFormatUpload}
-              />
-              <label htmlFor="format-upload">
-                <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-lg cursor-pointer border-blue-300 text-blue-700 hover:bg-blue-100 ${analyzingFormat ? 'opacity-60 cursor-not-allowed' : ''}`}>
-                  {analyzingFormat
-                    ? <><span className="animate-spin">⏳</span> Analyzing...</>
-                    : <><Upload className="w-4 h-4" /> Upload Template Document</>
-                  }
-                </span>
-              </label>
-            </div>
-
             {/* Font Family */}
             <div>
               <label className="text-sm font-medium text-slate-700 mb-2 block">Font Family</label>
@@ -363,7 +325,7 @@ export default function Settings({ onNavigate, idToken }: { onNavigate?: (p: str
                 <Image className="w-5 h-5 text-blue-600" />
                 <div>
                   <h4 className="text-sm font-semibold text-slate-900">Letterhead</h4>
-                  <p className="text-xs text-slate-500">Upload a PNG/JPG image to use as a full-page background watermark on exports. You'll be asked each time whether to apply it.</p>
+                  <p className="text-xs text-slate-500">Upload a PNG, JPG, or PDF to use as a letterhead header on exports. PDF page 1 is automatically converted to an image. You'll be asked each time whether to apply it.</p>
                 </div>
               </div>
 
@@ -390,7 +352,7 @@ export default function Settings({ onNavigate, idToken }: { onNavigate?: (p: str
                   <input
                     ref={letterheadInputRef}
                     type="file"
-                    accept="image/png,image/jpeg,image/jpg"
+                    accept="image/png,image/jpeg,image/jpg,.pdf,application/pdf"
                     className="hidden"
                     id="letterhead-upload"
                     onChange={handleLetterheadUpload}
@@ -399,7 +361,7 @@ export default function Settings({ onNavigate, idToken }: { onNavigate?: (p: str
                     <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-slate-300 rounded-lg cursor-pointer text-slate-700 hover:bg-slate-50 ${uploadingLetterhead ? 'opacity-60 cursor-not-allowed' : ''}`}>
                       {uploadingLetterhead
                         ? <><span className="animate-spin">⏳</span> Uploading...</>
-                        : <><Upload className="w-4 h-4" /> Upload Letterhead Image</>
+                        : <><Upload className="w-4 h-4" /> Upload Letterhead (PNG/JPG/PDF)</>
                       }
                     </span>
                   </label>
