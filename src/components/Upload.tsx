@@ -1,4 +1,5 @@
 // Upload.tsx — chartreview-pro-live-frontend
+// Updated: 2026-08-30 — Simplified status messages for production (hide internal pipeline steps)
 // Updated: 2026-08-22 — Integrated Stripe per-page payment flow
 // Ported: 2026-05-03 — CRA/TypeScript port of Upload v16
 // Fixes applied: env vars, inlined UI components, removed useNavigate/createPageUrl,
@@ -102,12 +103,6 @@ const RefreshCw = ({ className = "" }: any) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
       d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
-  </svg>
-);
-const Scissors = ({ className = "" }: any) => (
-  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <circle cx="6" cy="6" r="3" strokeWidth={2} /><circle cx="6" cy="18" r="3" strokeWidth={2} />
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 4L8.12 15.88M14.47 14.48L20 20M8.12 8.12L12 12" />
   </svg>
 );
 const Shield = ({ className = "" }: any) => (
@@ -366,8 +361,8 @@ const FileRow = React.memo(({ file, onRemove, onRetry }: { file: any; onRemove: 
   const statusColor: any = {
     pending: "text-slate-500",
     uploading: "text-blue-600",
-    splitting: "text-purple-600",
-    processing: "text-purple-600",
+    splitting: "text-blue-600",
+    processing: "text-blue-600",
     completed: "text-green-600",
     error: "text-red-600",
   }[file.status] || "text-slate-500";
@@ -375,11 +370,9 @@ const FileRow = React.memo(({ file, onRemove, onRetry }: { file: any; onRemove: 
   const statusLabel: any = {
     pending: "Pending",
     uploading: `Uploading… ${file.progress || 0}%`,
-    splitting: `Splitting into parts… ${file.progress || 0}%`,
-    processing: `Processing… ${file.progress || 0}%`,
-    completed: file.splitIntoParts
-      ? `Complete — split into ${file.splitIntoParts} parts`
-      : "Complete",
+    splitting: `Uploading… ${file.progress || 0}%`,
+    processing: `Uploading… ${file.progress || 0}%`,
+    completed: "Complete",
     error: file.error || "Error",
   }[file.status] || file.status;
 
@@ -387,13 +380,9 @@ const FileRow = React.memo(({ file, onRemove, onRetry }: { file: any; onRemove: 
     <div className={`flex items-center gap-3 p-3 rounded-lg border ${
       file.status === "completed" ? "bg-green-50 border-green-200"
       : file.status === "error" ? "bg-red-50 border-red-200"
-      : file.status === "splitting" ? "bg-purple-50 border-purple-200"
       : "bg-white border-slate-200"
     }`}>
-      {file.status === "splitting"
-        ? <Scissors className="w-5 h-5 text-purple-400 shrink-0 animate-pulse" />
-        : <FileText className="w-5 h-5 text-slate-400 shrink-0" />
-      }
+      <FileText className="w-5 h-5 text-slate-400 shrink-0" />
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-slate-900 truncate">{file.name}</p>
         <p className={`text-xs mt-0.5 ${statusColor}`}>{statusLabel}</p>
@@ -673,7 +662,7 @@ export default function Upload({ onNavigate, idToken = "", isFreeUser = false }:
           <div>
             <p className="text-sm font-semibold text-green-700">HIPAA Compliant</p>
             <p className="text-xs text-slate-500 mt-0.5">
-              All files are encrypted and securely stored. PDFs over 5 MB are automatically split into 50-page chunks for reliable processing.
+              All files are encrypted and securely stored.
             </p>
           </div>
         </div>
