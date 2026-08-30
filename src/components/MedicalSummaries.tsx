@@ -9,7 +9,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import MedicalSummaryForm from "./summaries/MedicalSummaryForm";
 import SummaryViewer from "./summaries/SummaryViewer";
-import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle, Header, ImageRun } from 'docx';
+import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle, Header, ImageRun, HorizontalPositionRelativeFrom, VerticalPositionRelativeFrom, TextWrappingType } from 'docx';
 import { getExportPrefs } from './Settings';
 
 // ── Env vars (CRA) ────────────────────────────────────────────────────────────
@@ -695,7 +695,7 @@ const normalizePTSetting = (setting: string): string => {
     if (selectedDocs.length === 0) { setError("Please select at least one document."); return; }
     setShowDialog(false);
     setSelectedDocuments([]);
-    genStore.set({ running: true, statusMsg: "Generating summary…", completionMsg: "", error: null, elapsedSeconds: 0 });
+    genStore.set({ running: true, statusMsg: "Starting...", completionMsg: "", error: null, elapsedSeconds: 0 });
     if (genStore.state.timerHandle) clearInterval(genStore.state.timerHandle);
     let elapsed = 0;
     const timerHandle = setInterval(() => { elapsed += 1; genStore.set({ elapsedSeconds: elapsed }); }, 1000);
@@ -720,13 +720,13 @@ const normalizePTSetting = (setting: string): string => {
         clearInterval(timerHandle);
         return;
       }
-      genStore.set({ statusMsg: "Generating summary…" });
+      genStore.set({ statusMsg: `Sending ${docIds.length} documents to ChartReview AI...` });
       const startRes = await awsProxy('/summaries/generate', 'POST', {
         doc_ids: docIds, patient_name: '', run_vi_prepass: true, include_all_pt: includeAllPt,
       });
       const job_id = startRes?.job_id;
       if (!job_id) throw new Error('No job_id returned from generateSummaryStart');
-      genStore.set({ statusMsg: "Generating summary…" });
+      genStore.set({ statusMsg: 'Sending documents for processing...' });
       let jobResult: any = null;
       const POLL_INTERVAL_MS = 5000;
       const MAX_POLLS = 360;
@@ -735,7 +735,7 @@ const normalizePTSetting = (setting: string): string => {
         const jobStatus = await awsProxy(`/jobs/${job_id}`, 'GET');
         if (jobStatus?.status === 'complete') { jobResult = jobStatus.result; break; }
         if (jobStatus?.status === 'failed') throw new Error('Generation failed: ' + (jobStatus?.error_message || 'unknown error'));
-        genStore.set({ statusMsg: "Generating summary…" });
+        genStore.set({ statusMsg: jobStatus?.status_msg || 'Processing...' });
       }
       if (!jobResult) throw new Error('Generation timed out after 30 minutes');
       const rawVisits: any[] = Array.isArray(jobResult.visits) ? jobResult.visits : [];
@@ -749,7 +749,7 @@ const normalizePTSetting = (setting: string): string => {
       // Backend coordinator already saved the summary record (with case_number, polishing status).
       // Only POST if aws_summary_id is absent (e.g. older backend without coordinator save).
       if (!jobResult.aws_summary_id) {
-        genStore.set({ statusMsg: "Generating summary…" });
+        genStore.set({ statusMsg: 'Saving summary...' });
         try {
           await awsProxy('/summaries', 'POST', {
             patient_name: patientName,
@@ -1018,22 +1018,35 @@ const normalizePTSetting = (setting: string): string => {
       sections: [{ properties: { page: { margin: { top: 720, bottom: 720, left: 720, right: 720 } } }, children: sections_content }],
     });
 
-    // ── Letterhead watermark (optional) ───────────────────────────────────────
+    // ── Letterhead background (optional) ──────────────────────────────────────
+    // Letterhead is placed as a full-page floating image, positioned behind the body text
+    // (not squeezed into a small header band) so the summary appears to be written on the
+    // letterhead itself, matching the original PDF/image design edge-to-edge.
     const { letterheadUrl } = getExportPrefs();
-    if (letterheadUrl && window.confirm('Apply your letterhead as a background watermark on this export?')) {
-      // Fetch image as base64 and inject into docx as a header image
+    if (letterheadUrl && window.confirm('Apply your letterhead as a full-page background on this export?')) {
       try {
         const imgResp = await fetch(letterheadUrl);
         const imgBlob = await imgResp.blob();
         const imgBuffer = await imgBlob.arrayBuffer();
-        const ext = (letterheadUrl.split('?')[0].split('.').pop() || 'png').toLowerCase();
+
+        // US Letter page at 96 DPI == 816 x 1056 px. The letterhead PDF/image is captured at
+        // this same page aspect ratio (see Settings.tsx PDF->PNG render), so no distortion.
         const headerImg = new ImageRun({
           data: imgBuffer,
-          transformation: { width: 756, height: 110 },
+          transformation: { width: 816, height: 1056 },
+          floating: {
+            horizontalPosition: { relative: HorizontalPositionRelativeFrom.PAGE, offset: 0 },
+            verticalPosition: { relative: VerticalPositionRelativeFrom.PAGE, offset: 0 },
+            behindDocument: true,
+            allowOverlap: true,
+            wrap: { type: TextWrappingType.NONE },
+          },
         });
         const docWithLetterhead = new Document({
           sections: [{
-            properties: { page: { margin: { top: 1400, bottom: 720, left: 720, right: 720 } } },
+            // Generous margins keep body text clear of typical letterhead header/footer bands.
+            // If a specific letterhead's bands are taller/shorter, these may need adjusting.
+            properties: { page: { margin: { top: 2160, bottom: 1440, left: 1080, right: 1080 } } },
             headers: { default: new Header({ children: [new Paragraph({ children: [headerImg] })] }) },
             children: sections_content,
           }],
@@ -1181,7 +1194,7 @@ const normalizePTSetting = (setting: string): string => {
       {generatingSummary && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center gap-4">
           <Loader2 className="w-5 h-5 text-blue-600 animate-spin flex-shrink-0" />
-          <div className="flex-1"><p className="text-sm font-medium text-blue-800">{statusMsg || "Generating summary…"}</p></div>
+          <div className="flex-1"><p className="text-sm font-medium text-blue-800">{statusMsg || "Generating..."}</p></div>
           <span className="text-sm font-mono text-blue-600">
             {Math.floor(elapsedSeconds / 60)}:{String(elapsedSeconds % 60).padStart(2, "0")}
           </span>
