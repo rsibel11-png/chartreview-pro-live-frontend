@@ -1,4 +1,5 @@
 // Settings.tsx — chartreview-native-frontend
+// Updated: 2026-08-30 — Fix bottom boundary scan: scan midpoint-downward instead of bottom-upward to find footer band START (not bottom border line)
 // Updated: 2026-08-30 — Add diagnostic logging to letterhead margin detection
 // Updated: 2026-08-30 — Fix letterhead margin detection: use band-based approach (min non-white pixels per row/col)
 //   to filter out thin border frames and anti-aliasing artifacts that caused all margins to return minimum (720).
@@ -118,9 +119,11 @@ function detectLetterheadMargins(canvas: HTMLCanvasElement): { top: number; bott
     }
   }
 
-  // Find footer band: scan bottom half, find the FIRST strong row (where footer content starts)
+  // Find footer band: scan from midpoint DOWNWARD, find the FIRST strong row (where footer content starts)
+  // This mirrors the top scan and correctly finds the TOP of the footer band,
+  // skipping thin border lines at the very bottom of the page.
   let bottomBoundary = height - 1;
-  for (let y = height - 1; y >= midpoint; y--) {
+  for (let y = midpoint; y < height; y++) {
     if (rowStrength[y] >= MIN_STRONG) {
       bottomBoundary = y;
       break;
