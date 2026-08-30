@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // App.tsx — chartreview-pro-live-frontend
+// Updated: 2026-08-30 — Hide Visit Index page from live production
 // Updated: 2026-08-30 — Added SplitPdf page for client-side PDF splitting
 // Updated: 2026-08-22 — Hide Redaction page from live production
 
@@ -31,7 +32,6 @@ const NAV_ITEMS = [
   { name: 'SplitPdf',        label: 'Split PDF',           Icon: Scissors        },
   { name: 'Library',          label: 'Document Library',   Icon: Library         },
   { name: 'MedicalSummaries', label: 'Medical Summaries',  Icon: FileCheck       },
-  { name: 'VisitIndex',       label: 'Visit Index',        Icon: ListOrdered     },
   { name: 'Settings',         label: 'Settings',           Icon: SettingsIcon    },
 ];
 
@@ -86,7 +86,6 @@ function AppInner() {
       case 'SplitPdf':        return <SplitPdfAny   onNavigate={navigate} />;
       case 'Library':          return <LibraryAny   onNavigate={navigate} {...authProps} />;
       case 'MedicalSummaries': return <MedSumAny    onNavigate={navigate} {...authProps} />;
-      case 'VisitIndex':       return <VisitIdxAny  onNavigate={navigate} {...authProps} />;
       case 'Settings':         return <SettingsAny  onNavigate={navigate} {...authProps} />;
       default:                 return <DashboardAny onNavigate={navigate} {...authProps} />;
     }
