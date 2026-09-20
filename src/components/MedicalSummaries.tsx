@@ -1371,36 +1371,39 @@ const normalizePTSetting = (setting: string): string => {
               </div>
             )}
           </div>
-          {queueProgress && (
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800 mt-3">
-              <div className="flex items-center justify-between mb-1">
-                <span className="font-medium">Processing batch {queueProgress.current} of {queueProgress.total}...</span>
-                <span className="text-xs">{Math.round((queueProgress.current / queueProgress.total) * 100)}%</span>
+          {/* Updated: 2026-09-19 -- floating sticky footer so the action button/checkbox stay visible while scrolling a long document list; footer content and behavior unchanged. */}
+          <div className="sticky bottom-0 -mx-6 -mb-6 mt-3 bg-white border-t border-slate-200 px-6 py-3 space-y-3 shadow-[0_-4px_8px_-4px_rgba(0,0,0,0.08)]">
+            {queueProgress && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-800">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-medium">Processing batch {queueProgress.current} of {queueProgress.total}...</span>
+                  <span className="text-xs">{Math.round((queueProgress.current / queueProgress.total) * 100)}%</span>
+                </div>
+                <div className="w-full bg-blue-200 rounded-full h-1.5">
+                  <div className="bg-blue-600 h-1.5 rounded-full transition-all"
+                    style={{ width: `${(queueProgress.current / queueProgress.total) * 100}%` }} />
+                </div>
               </div>
-              <div className="w-full bg-blue-200 rounded-full h-1.5">
-                <div className="bg-blue-600 h-1.5 rounded-full transition-all"
-                  style={{ width: `${(queueProgress.current / queueProgress.total) * 100}%` }} />
-              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="includeAllPt"
+                checked={includeAllPt}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setIncludeAllPt(e.target.checked)}
+                className="w-4 h-4 accent-blue-600"
+              />
+              <label htmlFor="includeAllPt" className="text-sm text-slate-600 cursor-pointer">
+                Include all PT sessions (default: first &amp; last only)
+              </label>
             </div>
-          )}
-          <div className="flex items-center gap-2 mt-3">
-            <input
-              type="checkbox"
-              id="includeAllPt"
-              checked={includeAllPt}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setIncludeAllPt(e.target.checked)}
-              className="w-4 h-4 accent-blue-600"
-            />
-            <label htmlFor="includeAllPt" className="text-sm text-slate-600 cursor-pointer">
-              Include all PT sessions (default: first &amp; last only)
-            </label>
+            <Button onClick={generateSummary} disabled={selectedDocuments.length === 0 || generatingSummary}
+              className="w-full bg-gradient-to-r from-blue-600 to-cyan-600">
+              {generatingSummary
+                ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analyzing...</>
+                : <><Sparkles className="w-4 h-4 mr-2" />Generate Summary from {selectedDocuments.length || 0} Document{selectedDocuments.length !== 1 ? 's' : ''}</>}
+            </Button>
           </div>
-          <Button onClick={generateSummary} disabled={selectedDocuments.length === 0 || generatingSummary}
-            className="w-full mt-4 bg-gradient-to-r from-blue-600 to-cyan-600">
-            {generatingSummary
-              ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Analyzing...</>
-              : <><Sparkles className="w-4 h-4 mr-2" />Generate Summary from {selectedDocuments.length || 0} Document{selectedDocuments.length !== 1 ? 's' : ''}</>}
-          </Button>
         </DialogContent>
       </Dialog>
 
