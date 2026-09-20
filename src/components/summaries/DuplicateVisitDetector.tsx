@@ -1,5 +1,26 @@
 // DuplicateVisitDetector.tsx — chartreview-native-frontend
 // Restored 2026-05-29 — TypeScript, all shadcn/ui inlined, no external deps
+// Updated: 2026-09-07 — Compare view ordering: same-date visit cards now sorted by
+// rendering provider (case-insensitive) so same-provider entries sit adjacent; date
+// groups sorted chronologically. Display-only — deletion indices unchanged.
+// Updated: 2026-09-07 — Manual same-day ordering: ← / → controls on each compare card
+// let the user arrange that date's visits into the order they want in the summary.
+// Emits onDuplicateAction('reorder-date', indices-in-new-order); once a date is
+// manually ordered it renders in visits-array order (parent reorders the real array)
+// instead of the provider sort. Selections for that group are cleared on reorder so
+// stale indices can never delete the wrong visit.
+// Updated: 2026-09-08 — Typeable position: the position number next to the ←/→
+// arrows is now an editable box. Type the target slot (1..N) and press Enter or
+// click away to jump the card straight there — no more repeated arrow clicks for a
+// multi-slot move. moveInGroup already supported an arbitrary target index (splice
+// based, not a simple adjacent swap), so this only changes the input UI; the same
+// reorder-date event and selection-clearing safety apply.
+// Updated: 2026-09-08 — FIX: position box is now a CONTROLLED input (PositionInput
+// component) instead of defaultValue. Bug: after a jump reorder the per-slot input
+// keys were identical across reorders, so React reused stale input instances and
+// the shifted cards kept their old numbers (move 7→1 left the tail card showing
+// "1"). Controlled value always renders the card's true position; a local draft
+// only buffers what the user is typing while focused.
 
 import React, { useMemo, useState } from "react";
 
@@ -118,6 +139,39 @@ function VisitContentPanel({
 }
 
 // ── DuplicateVisitDetector ────────────────────────────────────────────────────
+// ── PositionInput (2026-09-08) ─────────────────────────────────────────────────
+// Controlled position box: always displays the card's true position in the group
+// (pos + 1). A local draft buffers typing; on blur it commits the target position.
+function PositionInput({ pos, total, onCommit }: { pos: number; total: number; onCommit: (targetPos: number) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const display = draft === null ? String(pos + 1) : draft;
+  return (
+    <input
+      type="number"
+      min={1}
+      max={total}
+      value={display}
+      onFocus={(e: any) => {
+        setDraft(String(pos + 1));
+        e.currentTarget.select();
+      }}
+      onChange={(e: any) => setDraft(e.currentTarget.value)}
+      onKeyDown={(e: any) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+      }}
+      onBlur={() => {
+        const raw = parseInt(draft === null ? "" : draft, 10);
+        setDraft(null);
+        if (isNaN(raw)) return;
+        const targetPos = Math.min(Math.max(raw, 1), total) - 1;
+        if (targetPos !== pos) onCommit(targetPos);
+      }}
+      className="w-9 text-center text-[11px] font-semibold text-slate-700 border border-slate-300 rounded-md py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-400 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+      title="Type a position and press Enter to move this visit there"
+    />
+  );
+}
+
 export default function DuplicateVisitDetector({
   visits,
   onDuplicateAction,
@@ -128,6 +182,10 @@ export default function DuplicateVisitDetector({
   const [selectedForDeletion, setSelectedForDeletion] = useState<
     Record<string, Set<number>>
   >({});
+  // Dates the user has manually ordered — rendered in visits-array order
+  const [manuallyOrderedDates, setManuallyOrderedDates] = useState<Set<string>>(
+    new Set()
+  );
   const [confirmDelete, setConfirmDelete] = useState<{
     indicesToDelete: number[];
   } | null>(null);
@@ -142,13 +200,56 @@ export default function DuplicateVisitDetector({
       if (!dateMap[visit.visit_date]) dateMap[visit.visit_date] = [];
       dateMap[visit.visit_date].push({ index: i, visit });
     });
-    return Object.values(dateMap).filter((g) => g.length > 1);
-  }, [visits]);
+    // 2026-09-07: deterministic ordering — date groups chronological, cards within
+    // a group grouped by provider so the user compares like with like.
+    // item.index stays the visits-array position (deletion indices unchanged).
+    return Object.values(dateMap)
+      .filter((g) => g.length > 1)
+      .sort((a, b) => (a[0].visit.visit_date || "").localeCompare(b[0].visit.visit_date || ""))
+      .map((g) =>
+        manuallyOrderedDates.has(g[0].visit.visit_date)
+          ? g // user chose the order — the parent already reorders the real array
+          : [...g].sort((a, b) =>
+              ((a.visit.rendering_provider || "").trim().toLowerCase()).localeCompare(
+                (b.visit.rendering_provider || "").trim().toLowerCase()
+              )
+            )
+      );
+  }, [visits, manuallyOrderedDates]);
 
   if (duplicateGroups.length === 0) return null;
 
   const toggleExpand = (groupIdx: number) => {
     setExpandedGroups((prev) => ({ ...prev, [groupIdx]: !prev[groupIdx] }));
+  };
+
+  // 2026-09-07: move a card within its date group; emits the new index order to
+  // the parent (MedicalSummaryForm) which physically reorders the visits array.
+  const moveInGroup = (
+    group: { index: number; visit: any }[],
+    groupKey: string,
+    date: string,
+    from: number,
+    to: number
+  ) => {
+    if (to < 0 || to >= group.length || from === to) return;
+    const indices = group.map((it: any) => it.index);
+    const next = [...indices];
+    const moved = next.splice(from, 1)[0];
+    next.splice(to, 0, moved);
+    setManuallyOrderedDates((prev: Set<string>) => {
+      const s = new Set(prev);
+      s.add(date);
+      return s;
+    });
+    // Indices shift after the reorder — drop this group's pending selections so
+    // a stale index can never select (and delete) the wrong visit.
+    setSelectedForDeletion((prev: Record<string, Set<number>>) => {
+      const p: Record<string, Set<number>> = { ...prev };
+      delete p[groupKey];
+      return p;
+    });
+    onDuplicateAction("reorder-date", next);
   };
 
   const toggleItem = (groupKey: string, itemIndex: number) => {
@@ -303,17 +404,52 @@ export default function DuplicateVisitDetector({
               {isExpanded && (
                 <div className="p-4">
                   <p className="text-xs text-slate-500 mb-3">
-                    Click a visit card to select / deselect it for deletion:
+                    Click a visit card to select / deselect it for deletion. Use the
+                    &larr; / &rarr; controls, or type a position number and press
+                    Enter, to arrange that day's visits into the order you want in
+                    the summary — your order is saved with it.
                   </p>
                   <div className="flex gap-3 overflow-x-auto pb-2">
-                    {group.map((item) => (
-                      <VisitContentPanel
-                        key={item.index}
-                        visit={item.visit}
-                        index={item.index}
-                        isSelected={selectedSet.has(item.index)}
-                        onToggle={() => toggleItem(groupKey, item.index)}
-                      />
+                    {group.map((item, posInGroup) => (
+                      <div key={item.index} className="flex flex-col items-stretch">
+                        <div className="flex items-center justify-center gap-2 pb-1.5">
+                          <button
+                            type="button"
+                            disabled={posInGroup === 0}
+                            onClick={() =>
+                              moveInGroup(group, groupKey, group[0].visit.visit_date, posInGroup, posInGroup - 1)
+                            }
+                            className="px-2 py-0.5 rounded-md border border-slate-300 text-slate-600 text-sm hover:bg-slate-100 disabled:opacity-40 disabled:pointer-events-none"
+                            title="Move earlier"
+                          >
+                            &larr;
+                          </button>
+                          <PositionInput
+                            pos={posInGroup}
+                            total={group.length}
+                            onCommit={(targetPos: number) =>
+                              moveInGroup(group, groupKey, group[0].visit.visit_date, posInGroup, targetPos)
+                            }
+                          />
+                          <button
+                            type="button"
+                            disabled={posInGroup === group.length - 1}
+                            onClick={() =>
+                              moveInGroup(group, groupKey, group[0].visit.visit_date, posInGroup, posInGroup + 1)
+                            }
+                            className="px-2 py-0.5 rounded-md border border-slate-300 text-slate-600 text-sm hover:bg-slate-100 disabled:opacity-40 disabled:pointer-events-none"
+                            title="Move later"
+                          >
+                            &rarr;
+                          </button>
+                        </div>
+                        <VisitContentPanel
+                          visit={item.visit}
+                          index={item.index}
+                          isSelected={selectedSet.has(item.index)}
+                          onToggle={() => toggleItem(groupKey, item.index)}
+                        />
+                      </div>
                     ))}
                   </div>
                   {/* Per-group delete button */}
