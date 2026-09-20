@@ -9,6 +9,9 @@ import React, { useState, useEffect } from "react";
 import DuplicateVisitDetector from "./DuplicateVisitDetector";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import MacroPicker from "./MacroPicker";
+// Updated: 2026-09-12 — silent Cognito session refresh (fixes long-edit save timeouts)
+import { getSessionToken } from "../../api/authSession";
+import toast from "react-hot-toast";
 
 // ── Env vars ──────────────────────────────────────────────────────────────────
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || "";
@@ -214,6 +217,211 @@ const Trash2 = ({ className = "" }) => (
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
   </svg>
 );
+const Maximize2 = ({ className = "" }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+  </svg>
+);
+const Minimize2 = ({ className = "" }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v6H3M15 21v-6h6M3 9l6-6M15 15l6 6" />
+  </svg>
+);
+
+// ── pdf.js loader (same pattern as EmrDetector/SummaryViewer) — View Record ──
+// Updated: 2026-09-19 — added "View Record" split pane: a visit that carries
+// source_page + source_doc_id (set by generate_summary.js) gets a link that opens
+// the exact source PDF page in a right-hand pane. Visits without that data (older
+// summaries, or passes that don't emit it) simply have no link — no behavior change.
+declare global {
+  interface Window {
+    pdfjsLib: any;
+    _crpPdfCache: any;
+  }
+}
+let _msfPdfjs: any = null;
+const _getMsfPdfjs = () => new Promise((resolve, reject) => {
+  if (_msfPdfjs) return resolve(_msfPdfjs);
+  if (window.pdfjsLib) {
+    _msfPdfjs = window.pdfjsLib;
+    _msfPdfjs.GlobalWorkerOptions.workerSrc = "";
+    return resolve(_msfPdfjs);
+  }
+  const script = document.createElement("script");
+  script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+  script.onload = () => {
+    _msfPdfjs = window.pdfjsLib;
+    _msfPdfjs.GlobalWorkerOptions.workerSrc = "";
+    resolve(_msfPdfjs);
+  };
+  script.onerror = () => reject(new Error("pdfjs failed to load"));
+  document.head.appendChild(script);
+});
+
+const FileText = ({ className = "" }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+  </svg>
+);
+const ChevronLeft = ({ className = "" }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+  </svg>
+);
+const ChevronRight = ({ className = "" }) => (
+  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+  </svg>
+);
+const Loader2Icon = ({ className = "" }) => (
+  <svg className={`animate-spin ${className}`} fill="none" viewBox="0 0 24 24">
+    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+  </svg>
+);
+
+interface ActiveRecord { docId: string; page: number; label?: string; }
+
+function RecordPane({ record, onClose, onPageChange, awsProxy }: {
+  record: ActiveRecord; onClose: () => void; onPageChange: (page: number) => void; awsProxy: any;
+}) {
+  const [status, setStatus] = useState<"loading" | "done" | "error">("loading");
+  const [errMsg, setErrMsg] = useState("");
+  const [numPages, setNumPages] = useState<number | null>(null);
+  const [pageSize, setPageSize] = useState<{ w: number; h: number } | null>(null);
+  const [visiblePage, setVisiblePage] = useState(record.page);
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
+  const slotRefs = React.useRef<{ [page: number]: HTMLDivElement | null }>({});
+  const canvasRefs = React.useRef<{ [page: number]: HTMLCanvasElement | null }>({});
+  const renderedPages = React.useRef<Set<number>>(new Set());
+  const pdfDocRef = React.useRef<any>(null);
+  const observerRef = React.useRef<IntersectionObserver | null>(null);
+
+  const renderPage = async (pageNum: number) => {
+    if (!pdfDocRef.current || renderedPages.current.has(pageNum)) return;
+    const canvas = canvasRefs.current[pageNum];
+    if (!canvas) return;
+    renderedPages.current.add(pageNum);
+    try {
+      const page = await pdfDocRef.current.getPage(pageNum);
+      const viewport = page.getViewport({ scale: 1.4 });
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      await page.render({ canvasContext: canvas.getContext("2d"), viewport }).promise;
+    } catch {
+      renderedPages.current.delete(pageNum);
+    }
+  };
+
+  // Load the PDF + page count once per document.
+  useEffect(() => {
+    let cancelled = false;
+    setStatus("loading"); setNumPages(null); setPageSize(null);
+    renderedPages.current = new Set();
+    pdfDocRef.current = null;
+    (async () => {
+      try {
+        const pdfjsLib: any = await _getMsfPdfjs();
+        if (!window._crpPdfCache) window._crpPdfCache = {};
+        let pdfDoc = window._crpPdfCache[record.docId];
+        if (!pdfDoc) {
+          const result = await awsProxy(`/documents/${record.docId}/download-url`, "GET");
+          const url = result.url || result.download_url || result.signedUrl;
+          if (!url) throw new Error("No PDF URL returned");
+          pdfDoc = await pdfjsLib.getDocument(url).promise;
+          window._crpPdfCache[record.docId] = pdfDoc;
+        }
+        if (cancelled) return;
+        pdfDocRef.current = pdfDoc;
+        const pageNum = Math.min(Math.max(1, record.page), pdfDoc.numPages);
+        const page = await pdfDoc.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 1.4 });
+        if (cancelled) return;
+        setNumPages(pdfDoc.numPages);
+        setPageSize({ w: viewport.width, h: viewport.height });
+        setStatus("done");
+      } catch (err: any) {
+        if (!cancelled) {
+          setStatus("error");
+          setErrMsg(err && err.message ? err.message : "Failed to load document");
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [record.docId]);
+
+  // Jump to the requested page whenever the caller changes it (new visit clicked, or arrow nav).
+  useEffect(() => {
+    if (!pageSize || !numPages) return;
+    const target = Math.min(Math.max(1, record.page), numPages);
+    slotRefs.current[target]?.scrollIntoView({ block: "start" });
+    setVisiblePage(target);
+  }, [record.docId, record.page, pageSize, numPages]);
+
+  // Lazily render pages as they scroll into view; track which page is currently on screen.
+  useEffect(() => {
+    if (!pageSize || !numPages || !containerRef.current) return;
+    const observer = new IntersectionObserver((entries) => {
+      let best: { page: number; ratio: number } | null = null;
+      entries.forEach((entry) => {
+        const p = Number((entry.target as HTMLElement).dataset.page);
+        if (entry.isIntersecting) {
+          renderPage(p);
+          if (!best || entry.intersectionRatio > best.ratio) best = { page: p, ratio: entry.intersectionRatio };
+        }
+      });
+      if (best) setVisiblePage(best.page);
+    }, { root: containerRef.current, rootMargin: "600px 0px", threshold: [0, 0.25, 0.5, 0.75, 1] });
+    observerRef.current = observer;
+    Object.values(slotRefs.current).forEach((el) => { if (el) observer.observe(el); });
+    return () => observer.disconnect();
+  }, [pageSize, numPages]);
+
+  const jumpTo = (pageNum: number) => {
+    if (!numPages) return;
+    const target = Math.min(Math.max(1, pageNum), numPages);
+    slotRefs.current[target]?.scrollIntoView({ block: "start", behavior: "smooth" });
+    onPageChange(target);
+  };
+
+  return (
+    <div className="flex flex-col h-full border-l border-slate-200 bg-slate-50">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-white">
+        <div className="flex items-center gap-2 min-w-0">
+          <FileText className="w-4 h-4 text-slate-500 shrink-0" />
+          <span className="text-sm font-medium text-slate-900 truncate">{record.label || "Source record"}</span>
+        </div>
+        <Button variant="ghost" size="sm" onClick={onClose}>✕</Button>
+      </div>
+      <div className="flex items-center justify-center gap-3 px-4 py-2 border-b border-slate-200 bg-white text-sm text-slate-600">
+        <Button variant="outline" size="sm" disabled={visiblePage <= 1} onClick={() => jumpTo(visiblePage - 1)}>
+          <ChevronLeft className="w-3.5 h-3.5" />
+        </Button>
+        <span>Page {visiblePage}{numPages ? ` of ${numPages}` : ""}</span>
+        <Button variant="outline" size="sm" disabled={!!numPages && visiblePage >= numPages} onClick={() => jumpTo(visiblePage + 1)}>
+          <ChevronRight className="w-3.5 h-3.5" />
+        </Button>
+      </div>
+      <div ref={containerRef} className="flex-1 overflow-y-auto p-4 space-y-3">
+        {status === "error" ? (
+          <span className="text-sm text-red-600 p-4 text-center block">{errMsg}</span>
+        ) : status === "loading" ? (
+          <span className="flex items-center gap-2 text-sm text-slate-400 mt-8 justify-center"><Loader2Icon className="w-4 h-4" /> Loading document…</span>
+        ) : (
+          Array.from({ length: numPages || 0 }, (_, i) => i + 1).map((pageNum) => (
+            <div key={pageNum}
+              ref={(el) => { slotRefs.current[pageNum] = el; if (el && observerRef.current) observerRef.current.observe(el); }}
+              data-page={pageNum}
+              className="mx-auto bg-white shadow-sm" style={{ width: pageSize!.w, maxWidth: '100%' }}>
+              <canvas ref={(el) => { canvasRefs.current[pageNum] = el; }}
+                style={{ width: '100%', aspectRatio: `${pageSize!.w} / ${pageSize!.h}`, display: 'block' }} />
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
 
 // ── Component ─────────────────────────────────────────────────────────────────
 interface MedicalSummaryFormProps {
@@ -221,19 +429,21 @@ interface MedicalSummaryFormProps {
   onClose: () => void;
   onSave: () => void;
   idToken?: string;
+  cognitoUser?: any;
 }
 
-export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }: MedicalSummaryFormProps) {
+export default function MedicalSummaryForm({ summary, onClose, onSave, idToken, cognitoUser }: MedicalSummaryFormProps) {
   // ── AWS proxy ───────────────────────────────────────────────────────────────
   const awsProxy = async (path: string, method = "GET", data?: any): Promise<any> => {
     const opts: any = {
       method,
       "x-api-key": API_KEY,
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken || ""}`, "x-org-id": ORG_ID },
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${await getSessionToken(cognitoUser, idToken)}`, "x-org-id": ORG_ID },
     };
     if (data !== undefined) opts.body = JSON.stringify(data);
     const res = await fetch(`${AWS_API_URL}${path}`, opts);
     const json = await res.json();
+    if (res.status === 401) throw new Error('Your login session expired — log in again, then re-save. Your edits are still on screen (do not refresh).');
     if (!res.ok) throw new Error(json.error || `awsProxy ${method} ${path} failed: ${res.status}`);
     return json;
   };
@@ -241,6 +451,9 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState<any>(() => sanitizeSummary(summary));
   const [expandedVisit, setExpandedVisit] = useState(0);
+  const [activeRecord, setActiveRecord] = useState<ActiveRecord | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [pendingVisitIndex, setPendingVisitIndex] = useState<number | null>(null);
   const [providerPracticeMap, setProviderPracticeMap] = useState<any>({});
   const [icd10Input, setIcd10Input] = useState<any>({});
 
@@ -290,9 +503,21 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
       queryClient.invalidateQueries({ queryKey: ['aws-all-summaries-for-rules'] });
       onSave();
     },
+    // Updated: 2026-09-12 — save failures were silently swallowed (no onError), so an
+    // expired session made Save do nothing visible. Surface the error now.
+    onError: (err: any) => {
+      toast.error(err && err.message ? err.message : 'Failed to save summary');
+    },
   });
 
-  const handleSave = () => updateMutation.mutate(sanitizeSummary(formData));
+  const handleSave = () => {
+    let dataToSave = formData;
+    if (pendingVisitIndex !== null && formData.visits && formData.visits[pendingVisitIndex]) {
+      const { nextVisits } = placeVisitAtIndex(formData.visits, pendingVisitIndex);
+      dataToSave = { ...formData, visits: nextVisits };
+    }
+    updateMutation.mutate(sanitizeSummary(dataToSave));
+  };
 
   const updateVisit = (index: number, field: string, value: any) => {
     setFormData((prev: any) => ({
@@ -301,6 +526,37 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
         i === index ? { ...visit, [field]: value } : visit
       )
     }));
+  };
+
+  // Given the full visits array and the index of one visit, returns that array
+  // with the visit relocated to its correct chronological slot (dated visits sorted
+  // ascending; visits with no date yet stay at the bottom, in their current relative
+  // order). Used to place a manually-added visit once the user is done editing it —
+  // "Visit N" numbers are derived from array position (see the Visit {index+1}
+  // header below), so relocating it automatically renumbers everything after it.
+  // Other visits are left exactly as they are; only the target visit moves.
+  const placeVisitAtIndex = (visits: any[], index: number): { nextVisits: any[]; newIndex: number } => {
+    const visit = visits[index];
+    const others = visits.filter((_: any, i: number) => i !== index);
+    const dated = others.filter((v: any) => v.visit_date);
+    const undated = others.filter((v: any) => !v.visit_date);
+    let nextVisits: any[];
+    if (visit.visit_date) {
+      let insertAt = dated.findIndex((v: any) => (v.visit_date as string).localeCompare(visit.visit_date) > 0);
+      if (insertAt === -1) insertAt = dated.length;
+      nextVisits = [...dated.slice(0, insertAt), visit, ...dated.slice(insertAt), ...undated];
+    } else {
+      nextVisits = [...dated, ...undated, visit];
+    }
+    return { nextVisits, newIndex: nextVisits.indexOf(visit) };
+  };
+
+  const placeNewVisit = () => {
+    if (pendingVisitIndex === null || !formData.visits || !formData.visits[pendingVisitIndex]) return;
+    const { nextVisits, newIndex } = placeVisitAtIndex(formData.visits, pendingVisitIndex);
+    setFormData((prev: any) => ({ ...prev, visits: nextVisits }));
+    setExpandedVisit(newIndex);
+    setPendingVisitIndex(null);
   };
 
   const handleProviderChange = (index: number, providerName: string) => {
@@ -312,6 +568,7 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
   };
 
   const addVisit = () => {
+    const newIndex = (formData.visits || []).length;
     setFormData((prev: any) => ({
       ...prev,
       visits: [...(prev.visits || []), {
@@ -322,7 +579,8 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
         icd10_codes: [], treatment_plan: ''
       }]
     }));
-    setExpandedVisit((formData.visits || []).length);
+    setExpandedVisit(newIndex);
+    setPendingVisitIndex(newIndex);
   };
 
   const isC4Visit = (visit: any): boolean => {
@@ -331,6 +589,31 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
   };
 
   const handleDuplicateAction = (action: string, visitIndices: number[]) => {
+    // Updated: 2026-09-07 — reorder-date: user-arranged same-day visit order.
+    // visitIndices = the visits-array indices for ONE date, in the NEW order.
+    // Rebuild the array so that date's visits occupy their same positions but in
+    // the user's chosen order; every other visit is untouched. sanitizeSummary and
+    // the docx export preserve array order, so the custom order persists.
+    if (action === "reorder-date") {
+      const order = Array.isArray(visitIndices) ? visitIndices : [];
+      if (!order.length) return;
+      setFormData((prev: any) => {
+        const prevVisits: any[] = Array.isArray(prev.visits) ? prev.visits : [];
+        const date = ((prevVisits[order[0]] || {}) as any).visit_date;
+        if (!date) return prev;
+        const positions = prevVisits
+          .map((v: any, i: number) => (v && v.visit_date === date ? i : -1))
+          .filter((i: number) => i >= 0);
+        if (positions.length !== order.length) return prev;
+        const reordered = order.map((i: number) => prevVisits[i]);
+        const newVisits = [...prevVisits];
+        positions.forEach((pos: number, k: number) => {
+          newVisits[pos] = reordered[k];
+        });
+        return { ...prev, visits: newVisits };
+      });
+      return;
+    }
     if (action === "delete-selected") {
       const indicesToDelete = new Set<number>(visitIndices);
       setFormData((prev: any) => {
@@ -381,6 +664,11 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
     }));
     if (expandedVisit >= (formData.visits?.length || 0) - 1) {
       setExpandedVisit(Math.max(0, expandedVisit - 1));
+    }
+    // Keep the "pending placement" pointer correct as indices shift.
+    if (pendingVisitIndex !== null) {
+      if (index === pendingVisitIndex) setPendingVisitIndex(null);
+      else if (index < pendingVisitIndex) setPendingVisitIndex(pendingVisitIndex - 1);
     }
   };
 
@@ -444,15 +732,20 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative z-10 bg-white rounded-xl shadow-xl w-full mx-4 overflow-y-auto"
-        style={{ maxWidth: 900, maxHeight: '92vh' }}>
+      <div className={`relative z-10 bg-white shadow-xl w-full flex flex-col overflow-hidden ${isFullscreen ? '' : 'rounded-xl mx-4'}`}
+        style={isFullscreen
+          ? { maxWidth: '100vw', width: '100vw', height: '100vh', maxHeight: '100vh' }
+          : { maxWidth: activeRecord ? 1600 : 900, maxHeight: '92vh', height: activeRecord ? '92vh' : undefined }}>
 
-        {/* Sticky header */}
-        <div className="sticky top-0 bg-white border-b border-slate-200 px-6 py-4 z-10 flex items-center justify-between">
+        {/* Header */}
+        <div className="bg-white border-b border-slate-200 px-6 py-4 shrink-0 flex items-center justify-between">
           <h2 className="text-xl font-bold text-slate-900">
             Edit Summary — {formData.patient_name || 'Patient'}
           </h2>
           <div className="flex gap-2">
+            <Button variant="outline" size="icon" onClick={() => setIsFullscreen(!isFullscreen)}>
+              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </Button>
             <Button variant="outline" onClick={onClose}>Cancel</Button>
             <Button onClick={handleSave} disabled={updateMutation.isPending}
               className="bg-blue-600 hover:bg-blue-700 text-white">
@@ -462,6 +755,9 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
           </div>
         </div>
 
+        {/* Body: form column + optional record pane, side by side */}
+        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 overflow-y-auto" style={{ minWidth: activeRecord ? 420 : undefined }}>
         <div className="p-6 space-y-6">
 
           {/* Patient Info */}
@@ -563,9 +859,6 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
                 <Button onClick={() => setShowPtConsolidate(!showPtConsolidate)} size="sm" variant="outline">
                   Consolidate PT/OT
                 </Button>
-                <Button onClick={addVisit} size="sm" variant="outline">
-                  <Plus className="w-4 h-4 mr-2" />Add Visit
-                </Button>
               </div>
             </div>
 
@@ -584,6 +877,8 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
 
             {(formData.visits || []).map((visit: any, index: number) => {
               const isExpanded = expandedVisit === index;
+              const hasSourcePage = !!(visit.source_page && visit.source_doc_id);
+              const isActiveRecord = !!activeRecord && activeRecord.docId === visit.source_doc_id && activeRecord.page === visit.source_page;
               return (
                 <Card key={index} className="border-2">
                   <CardHeader className="cursor-pointer bg-slate-50"
@@ -594,7 +889,15 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
                         {visit.visit_date && ` — ${new Date(visit.visit_date + 'T00:00:00').toLocaleDateString()}`}
                         {visit.rendering_provider && ` — ${visit.rendering_provider}`}
                       </CardTitle>
-                      <div className="flex gap-2">
+                      <div className="flex items-center gap-2">
+                        {hasSourcePage && (
+                          <button
+                            onClick={(e: any) => { e.stopPropagation(); setActiveRecord({ docId: visit.source_doc_id, page: visit.source_page, label: visit.source_part_label || visit.practice_setting }); }}
+                            className={`text-xs font-medium whitespace-nowrap ${isActiveRecord ? 'text-blue-800 underline' : 'text-blue-600 hover:underline'}`}
+                          >
+                            View Record →
+                          </button>
+                        )}
                         {(formData.visits || []).length > 1 && (
                           <Button variant="ghost" size="sm"
                             onClick={(e: any) => { e.stopPropagation(); removeVisit(index); }}
@@ -609,6 +912,18 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
 
                   {isExpanded && (
                     <CardContent className="pt-6 space-y-4">
+
+                      {index === pendingVisitIndex && (
+                        <div className="flex items-center justify-between gap-3 bg-blue-50 border border-blue-200 rounded-md px-3 py-2">
+                          <p className="text-sm text-blue-800">
+                            New visit — fill in the details below, then save to place it in chronological order.
+                          </p>
+                          <Button size="sm" onClick={placeNewVisit}
+                            className="bg-blue-600 hover:bg-blue-700 text-white shrink-0">
+                            <Save className="w-4 h-4 mr-2" />Save Visit
+                          </Button>
+                        </div>
+                      )}
 
                       {/* Pre-note */}
                       <div>
@@ -770,6 +1085,12 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
                 </Card>
               );
             })}
+
+            <div className="flex justify-center pt-2">
+              <Button onClick={addVisit} size="sm" variant="outline">
+                <Plus className="w-4 h-4 mr-2" />Add Visit
+              </Button>
+            </div>
           </div>
 
           {/* Bottom save */}
@@ -782,6 +1103,19 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken }
             </Button>
           </div>
 
+        </div>
+        </div>
+
+        {activeRecord && (
+          <div className="flex-1" style={{ minWidth: 420 }}>
+            <RecordPane
+              record={activeRecord}
+              onClose={() => setActiveRecord(null)}
+              onPageChange={(page: number) => setActiveRecord((prev) => prev ? { ...prev, page } : prev)}
+              awsProxy={awsProxy}
+            />
+          </div>
+        )}
         </div>
       </div>
     </div>
