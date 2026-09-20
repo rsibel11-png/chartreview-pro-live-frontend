@@ -451,8 +451,30 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken, 
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState<any>(() => sanitizeSummary(summary));
   const [expandedVisit, setExpandedVisit] = useState(0);
+  // Added: 2026-09-20 -- Expand should scroll to the TOP of the visit that was
+  // expanded (its header), not wherever the browser's default scroll-anchoring
+  // happens to land after the expanded content pushes everything below it down
+  // (previously landed near the bottom of the newly-revealed fields).
+  const visitCardRefs = React.useRef<{ [index: number]: HTMLDivElement | null }>({});
+  useEffect(() => {
+    if (expandedVisit < 0) return;
+    visitCardRefs.current[expandedVisit]?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [expandedVisit]);
   const [activeRecord, setActiveRecord] = useState<ActiveRecord | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // Added: 2026-09-20 -- The split-pane record view should be the default,
+  // not something the user has to click "View Record" to open, and it should
+  // track whichever visit is currently expanded. Runs on mount too (expandedVisit
+  // starts at 0), so Visit 1's source page shows automatically on open. If the
+  // newly-expanded visit has no source page (e.g. a manually-added visit),
+  // leave whatever page is already showing rather than closing the pane.
+  useEffect(() => {
+    if (expandedVisit < 0) return;
+    const visit = (formData.visits || [])[expandedVisit];
+    if (visit && visit.source_page && visit.source_doc_id) {
+      setActiveRecord({ docId: visit.source_doc_id, page: visit.source_page, label: visit.source_part_label || visit.practice_setting });
+    }
+  }, [expandedVisit]);
   const [pendingVisitIndex, setPendingVisitIndex] = useState<number | null>(null);
   const [providerPracticeMap, setProviderPracticeMap] = useState<any>({});
   const [icd10Input, setIcd10Input] = useState<any>({});
@@ -877,10 +899,9 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken, 
 
             {(formData.visits || []).map((visit: any, index: number) => {
               const isExpanded = expandedVisit === index;
-              const hasSourcePage = !!(visit.source_page && visit.source_doc_id);
-              const isActiveRecord = !!activeRecord && activeRecord.docId === visit.source_doc_id && activeRecord.page === visit.source_page;
               return (
-                <Card key={index} className="border-2">
+                <div key={index} ref={(el: HTMLDivElement | null) => { visitCardRefs.current[index] = el; }}>
+                <Card className="border-2">
                   <CardHeader className="cursor-pointer bg-slate-50"
                     onClick={() => setExpandedVisit(isExpanded ? -1 : index)}>
                     <div className="flex items-center justify-between">
@@ -890,14 +911,9 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken, 
                         {visit.rendering_provider && ` — ${visit.rendering_provider}`}
                       </CardTitle>
                       <div className="flex items-center gap-2">
-                        {hasSourcePage && (
-                          <button
-                            onClick={(e: any) => { e.stopPropagation(); setActiveRecord({ docId: visit.source_doc_id, page: visit.source_page, label: visit.source_part_label || visit.practice_setting }); }}
-                            className={`text-xs font-medium whitespace-nowrap ${isActiveRecord ? 'text-blue-800 underline' : 'text-blue-600 hover:underline'}`}
-                          >
-                            View Record →
-                          </button>
-                        )}
+                        {/* Removed: 2026-09-20 -- "View Record" button no longer needed now
+                            that the split-pane record view opens by default and auto-syncs
+                            to whichever visit is expanded. */}
                         {(formData.visits || []).length > 1 && (
                           <Button variant="ghost" size="sm"
                             onClick={(e: any) => { e.stopPropagation(); removeVisit(index); }}
@@ -1083,6 +1099,7 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken, 
                     </CardContent>
                   )}
                 </Card>
+                </div>
               );
             })}
 
