@@ -11,6 +11,8 @@ import MedicalSummaryForm from "./summaries/MedicalSummaryForm";
 import SummaryViewer from "./summaries/SummaryViewer";
 import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle, Header, ImageRun, HorizontalPositionRelativeFrom, VerticalPositionRelativeFrom, TextWrappingType } from 'docx';
 import { getExportPrefs } from './Settings';
+// Updated: 2026-09-12 — silent Cognito session refresh (fixes long-edit save timeouts)
+import { getSessionToken, readStoredToken } from '../api/authSession';
 
 // ── Env vars (CRA) ────────────────────────────────────────────────────────────
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || "https://1h4kpspbs6.execute-api.us-east-1.amazonaws.com/prod";
@@ -242,34 +244,51 @@ const genStore: any = {
 };
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?: (page: string) => void; idToken?: string }) {
+export default function MedicalSummaries({ onNavigate, idToken, cognitoUser }: { onNavigate?: (page: string) => void; idToken?: string; cognitoUser?: any }) {
   const queryClient = useQueryClient();
 
-  // Always read the freshest token from localStorage (Cognito SDK auto-refreshes it).
-  // Falls back to the prop passed at login time if localStorage is unavailable.
-  const getFreshToken = (): string => {
-    try {
-      const key = Object.keys(localStorage).find(k => k.includes('.idToken'));
-      if (key) return localStorage.getItem(key) || idToken || '';
-    } catch (e) { /* ignore */ }
-    return idToken || '';
-  };
+  // Updated: 2026-09-12 — silently refresh the Cognito session before every API call.
+  // The old comment claimed the SDK auto-refreshed the stored token — it does not:
+  // a fresh ID token is only minted when cognitoUser.getSession() is called, which
+  // never happened after login. After the ID token TTL (~60 min) every call 401'd.
+  // getSession() returns the cached session if still valid, or mints a fresh ID
+  // token from the ~30-day refresh token. Falls back to the last stored token.
+  const getFreshToken = (): Promise<string> => getSessionToken(cognitoUser, idToken);
 
   const awsProxy = async (path: string, method = "GET", data?: any): Promise<any> => {
     const url = `${AWS_API_URL}${path}`;
+    const token: string = await getFreshToken();
     const opts: any = {
       method,
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getFreshToken()}`, "x-org-id": ORG_ID },
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}`, "x-org-id": ORG_ID },
     };
     if (data !== undefined) opts.body = JSON.stringify(data);
     const res = await fetch(url, opts);
     const json = await res.json();
+    if (res.status === 401) throw new Error('Your login session expired — log in again, then retry. Your edits are still on screen (do not refresh).');
     if (!res.ok) throw new Error(json.error || `awsProxy ${method} ${path} failed: ${res.status}`);
     return json;
   };
 
   // ── State ──────────────────────────────────────────────────────────────────
   const [selectedDocuments, setSelectedDocuments] = useState<string[]>([]);
+  // Narrative-only (EMR exclusion) — 2026-09-15. Only meaningful when the selected
+  // docs have saved EMR Detector results (emr_flagged_pages on their records).
+  const [narrativeOnly, setNarrativeOnly] = useState<boolean>(false);
+  const countSelectedEmrPages = (): number => {
+    let count = 0;
+    const selected = groupedDocuments.filter((d: any) => selectedDocuments.includes(d.id));
+    for (const doc of selected) {
+      if (doc._is_group && doc._parts?.length) {
+        for (const part of doc._parts) {
+          count += Array.isArray(part.emr_flagged_pages) ? part.emr_flagged_pages.length : 0;
+        }
+      } else {
+        count += Array.isArray(doc.emr_flagged_pages) ? doc.emr_flagged_pages.length : 0;
+      }
+    }
+    return count;
+  };
   const [viewingSummary, setViewingSummary] = useState<any>(null);
   const [editingSummary, setEditingSummary] = useState<any>(null);
   const [deleteSummary, setDeleteSummary] = useState<any>(null);
@@ -313,11 +332,15 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
 
   // ── Queries ────────────────────────────────────────────────────────────────
   const { data: documents = [], isLoading: documentsLoading } = useQuery({
-    queryKey: ["aws-documents"],
+    // Updated: 2026-09-12 — split cache key from Library's ["aws-documents"] (which groups multi-part
+    // docs). This raw ungrouped list was clobbering Library's grouped cache, causing folder counts
+    // to flash unconsolidated part counts until Library refetched (~10s).
+    queryKey: ["aws-documents-raw"],
     queryFn: async () => {
+      const token: string = await getFreshToken();
       const res = await fetch(`${AWS_API_URL}/documents`, {
         method: "GET",
-        headers: { "Authorization": `Bearer ${getFreshToken()}`, "x-org-id": ORG_ID },
+        headers: { "Authorization": `Bearer ${token}`, "x-org-id": ORG_ID },
       });
       if (!res.ok) throw new Error("Failed to fetch documents");
       const data = await res.json();
@@ -341,7 +364,14 @@ export default function MedicalSummaries({ onNavigate, idToken }: { onNavigate?:
     },
     refetchOnWindowFocus: false,
   });
-  const summaries: any[] = Array.isArray(summariesRaw) ? summariesRaw : [];
+  // Updated: 2026-09-19 — sort summaries by created date, newest first (was unsorted API order)
+  const summaries: any[] = (Array.isArray(summariesRaw) ? summariesRaw : [])
+    .slice()
+    .sort((a: any, b: any) => {
+      const aTime = new Date(a.created_at || a.created_date || 0).getTime();
+      const bTime = new Date(b.created_at || b.created_date || 0).getTime();
+      return bTime - aTime;
+    });
 
   // ── Mutations ──────────────────────────────────────────────────────────────
   const deleteMutation = useMutation({
@@ -593,6 +623,33 @@ const normalizePTSetting = (setting: string): string => {
     });
   };
 
+  // Updated: 2026-09-16 — radiology exam disambiguator ported from backend
+  // (generate_summary.js 2026-09-15). Same-day radiology entries from the same
+  // reading radiologist only dedup when body part AND exam phase/time signals
+  // agree (e.g. pre- vs post-reduction, ankle vs femur). Distinct studies stay
+  // separate; true duplicate extractions (identical signature) still merge.
+  const BODY_PART_TERMS: string[] = ['ankle','femur','tibia','fibula','tibia/fibula','knee','patella','hip','pelvis','wrist','forearm','radius','ulna','elbow','humerus','shoulder','clavicle','scapula','hand','finger','thumb','foot','toe','calcaneus','chest','ribs','rib','abdomen','cervical spine','thoracic spine','lumbar spine','spine','skull','head','facial','sacrum','coccyx'];
+  const radiologyExamSignature = (visit: any): string => {
+    const text: string = [visit.imaging_findings, visit.hpi_summary, visit.chief_complaint, visit.treatment_plan]
+      .filter(Boolean).join(' ').toLowerCase();
+    if (!text) return '';
+    let bodyPart = '';
+    let bestIdx = Infinity;
+    BODY_PART_TERMS.forEach((term: string) => {
+      const idx: number = text.indexOf(term);
+      if (idx !== -1 && idx < bestIdx) { bestIdx = idx; bodyPart = term; }
+    });
+    let phase = '';
+    if (/post[\s-]?reduction/.test(text)) phase = 'post';
+    else if (/pre[\s-]?reduction/.test(text)) phase = 'pre';
+    else {
+      const timeMatch = text.match(/\b(\d{1,2}):(\d{2})\s*(am|pm)?\b/);
+      if (timeMatch) phase = `${timeMatch[1]}:${timeMatch[2]}${timeMatch[3] || ''}`;
+    }
+    if (!bodyPart && !phase) return '';
+    return `${bodyPart}::${phase}`;
+  };
+
   const deduplicateVisits = (visits: any[]) => {
     const visitList = visits || [];
     const groups = new Map<string, any[]>();
@@ -609,9 +666,16 @@ const normalizePTSetting = (setting: string): string => {
       const setting = (visit.practice_setting || '').toLowerCase();
       const isOpReport = /operative report|surgical report|operation report/i.test(setting);
       const isC4Entry = /c-4|wcb|workers' compensation report/i.test(setting);
-      const key = isOpReport ? `${dateKey}|${providerKey}|__op__`
-                : isC4Entry  ? `${dateKey}|${providerKey}|__c4__`
-                :               `${dateKey}|${providerKey}`;
+      const isRadiology = /radiology/i.test(setting);
+      let key = isOpReport ? `${dateKey}|${providerKey}|__op__`
+              : isC4Entry  ? `${dateKey}|${providerKey}|__c4__`
+              :               `${dateKey}|${providerKey}`;
+      // Radiology disambiguation: distinct body part or exam phase means a
+      // distinct study — keep it out of this group (port of backend rule).
+      if (isRadiology) {
+        const sig = radiologyExamSignature(visit);
+        if (sig) key += `|${sig}`;
+      }
       if (!groups.has(key)) { groups.set(key, []); order.push(key); }
       groups.get(key)!.push(visit);
     }
@@ -695,6 +759,7 @@ const normalizePTSetting = (setting: string): string => {
       .filter((d: any) => selectedDocuments.includes(d.id))
       .sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
     if (selectedDocs.length === 0) { setError("Please select at least one document."); return; }
+    const emrPagesSelected = countSelectedEmrPages();
     setShowDialog(false);
     setSelectedDocuments([]);
     genStore.set({ running: true, statusMsg: "Starting...", completionMsg: "", error: null, elapsedSeconds: 0 });
@@ -725,6 +790,7 @@ const normalizePTSetting = (setting: string): string => {
       genStore.set({ statusMsg: `Sending ${docIds.length} documents to ChartReview AI...` });
       const startRes = await awsProxy('/summaries/generate', 'POST', {
         doc_ids: docIds, patient_name: '', run_vi_prepass: true, include_all_pt: includeAllPt,
+        exclude_emr: narrativeOnly && emrPagesSelected > 0, // narrative-only run (EMR Detector results)
       });
       const job_id = startRes?.job_id;
       if (!job_id) throw new Error('No job_id returned from generateSummaryStart');
@@ -1199,7 +1265,7 @@ const normalizePTSetting = (setting: string): string => {
               ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Building Index...</>
               : <><List className="w-4 h-4 mr-2" />Build Visit Index</>}
           </Button>
-          <Button onClick={() => { setSelectedDocuments([]); setError(null); queryClient.invalidateQueries({ queryKey: ["aws-documents"] }); setShowDialog(true); }}
+          <Button onClick={() => { setSelectedDocuments([]); setError(null); queryClient.invalidateQueries({ queryKey: ["aws-documents-raw"] }); setShowDialog(true); }}
             className="bg-gradient-to-r from-green-600 to-emerald-600">
             <Plus className="w-4 h-4 mr-2" />Generate Summary
           </Button>
@@ -1249,6 +1315,20 @@ const normalizePTSetting = (setting: string): string => {
                   {selectedDocuments.length > 1 && ' All visits will be combined into one summary.'}
                 </AlertDescription>
               </Alert>
+            )}
+            {selectedDocuments.length > 0 && countSelectedEmrPages() > 0 && (
+              <div className="flex items-center justify-between px-3 py-2 border rounded-md bg-slate-50 border-slate-200">
+                <div className="flex items-center gap-2">
+                  <Checkbox
+                    checked={narrativeOnly}
+                    onCheckedChange={(checked: boolean) => setNarrativeOnly(checked)}
+                  />
+                  <label className="text-sm text-slate-700 cursor-pointer" onClick={() => setNarrativeOnly(!narrativeOnly)}>
+                    Narrative pages only <span className="text-slate-500">(exclude {countSelectedEmrPages()} EMR printout page{countSelectedEmrPages() !== 1 ? 's' : ''} detected by the EMR Detector)</span>
+                  </label>
+                </div>
+                <span className="text-xs text-slate-400">EMR-detected documents</span>
+              </div>
             )}
             <div className="space-y-6">
               {Object.keys(documentsByFolder).sort().map((folderName: string) => {
@@ -1702,7 +1782,8 @@ const normalizePTSetting = (setting: string): string => {
       {viewingSummary && (
         <SummaryViewer summary={viewingSummary} onClose={() => setViewingSummary(null)}
           onEdit={() => { setEditing(true); setEditingSummary(normalizeSummaryForEdit(viewingSummary)); setViewingSummary(null); }}
-          onExport={() => handleExportClick(viewingSummary)} />
+          onExport={() => handleExportClick(viewingSummary)}
+          idToken={idToken} cognitoUser={cognitoUser} />
       )}
 
       {/* Edit Summary */}
@@ -1710,7 +1791,8 @@ const normalizePTSetting = (setting: string): string => {
         <MedicalSummaryForm summary={editingSummary}
           onClose={() => { setEditing(false); setEditingSummary(null); }}
           onSave={() => { setEditing(false); queryClient.invalidateQueries({ queryKey: ["aws-summaries"] }); setEditingSummary(null); }}
-          idToken={idToken} />
+          idToken={idToken}
+          cognitoUser={cognitoUser} />
       )}
 
     </div>
