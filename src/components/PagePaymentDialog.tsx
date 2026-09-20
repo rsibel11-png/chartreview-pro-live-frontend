@@ -1,4 +1,8 @@
 // PagePaymentDialog.tsx — chartreview-pro-live-frontend
+// Updated: 2026-09-20 — Added optional variant prop ('upload' default | 'rerun') so the same
+//   credit/Stripe-checkout dialog can be reused to charge for re-running a summary on
+//   documents that already produced a completed one (MedicalSummaries.tsx). Only the
+//   copy differs by variant; all credit-check/Stripe logic is untouched either way.
 // Updated: 2026-08-30 — Pricing updated to match InPractice AI competitor ($0.10–$0.05/page)
 // Updated: 2026-08-22 — Port of PagePaymentDialog from Base44 app to CRA/TypeScript
 // Uses awsProxy pattern (API Gateway + Cognito) instead of base44 SDK
@@ -69,6 +73,7 @@ interface PagePaymentDialogProps {
   onProceed: (mode: string) => void;
   idToken: string;
   isFreeUser: boolean;
+  variant?: 'upload' | 'rerun'; // default 'upload' -- 'rerun' swaps copy for re-running an already-summarized document
 }
 
 export default function PagePaymentDialog({
@@ -78,7 +83,18 @@ export default function PagePaymentDialog({
   onProceed,
   idToken,
   isFreeUser,
+  variant = 'upload',
 }: PagePaymentDialogProps) {
+  const isRerun = variant === 'rerun';
+  const freeTitle = isRerun ? 'Re-run Summary' : 'Upload Summary';
+  const paidTitle = isRerun ? 'Re-run Payment Required' : 'Upload Payment Required';
+  const subtitleText = isRerun
+    ? 'These documents already have a completed summary. Review the page count and cost before running it again.'
+    : 'Review the page count and cost before processing your documents.';
+  const proceedFreeLabel = isRerun ? 'Proceed with Re-run' : 'Proceed with Upload';
+  const startAfterStripeLabel = isRerun ? 'Start Re-run' : 'Start Upload';
+  const useCreditsLabel = isRerun ? 'Use My Credits & Re-run Summary' : 'Use My Credits & Start Upload';
+  const cancelLabel = isRerun ? 'Cancel' : 'Cancel Upload';
   const [paymentMode, setPaymentMode] = useState<string | null>(null);
   const [stripeLoading, setStripeLoading] = useState(false);
   const [sessionPaid, setSessionPaid] = useState(false);
@@ -193,7 +209,7 @@ export default function PagePaymentDialog({
             className="w-full bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg h-12 text-base transition-colors"
             onClick={() => onProceed("stripe_paid")}
           >
-            Start Upload
+            {startAfterStripeLabel}
           </button>
         </div>
       </div>
@@ -207,7 +223,7 @@ export default function PagePaymentDialog({
         <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full mx-4 p-6 space-y-5">
           <div className="flex items-center gap-2">
             <FileText className="w-5 h-5 text-blue-600" />
-            <h3 className="text-xl font-bold text-slate-900">Upload Summary</h3>
+            <h3 className="text-xl font-bold text-slate-900">{freeTitle}</h3>
           </div>
           <div className="bg-slate-50 rounded-xl border border-slate-200 p-5 space-y-3">
             <div className="flex items-center justify-between">
@@ -224,7 +240,7 @@ export default function PagePaymentDialog({
             onClick={handleUseCredits}
           >
             <CheckCircle className="w-5 h-5" />
-            Proceed with Upload
+            {proceedFreeLabel}
           </button>
           <button
             className="w-full text-slate-500 hover:text-slate-700 text-sm"
@@ -246,10 +262,10 @@ export default function PagePaymentDialog({
           <div className="space-y-2">
             <div className="flex items-center gap-2">
               <FileText className="w-5 h-5 text-blue-600" />
-              <h3 className="text-xl font-bold text-slate-900">Upload Payment Required</h3>
+              <h3 className="text-xl font-bold text-slate-900">{paidTitle}</h3>
             </div>
             <p className="text-sm text-slate-600">
-              Review the page count and cost before processing your documents.
+              {subtitleText}
             </p>
           </div>
 
@@ -375,7 +391,7 @@ export default function PagePaymentDialog({
                 onClick={handleUseCredits}
               >
                 <CheckCircle className="w-5 h-5" />
-                Use My Credits & Start Upload
+                {useCreditsLabel}
               </button>
             )}
 
@@ -399,7 +415,7 @@ export default function PagePaymentDialog({
               className="w-full text-slate-500 hover:text-slate-700 text-sm"
               onClick={onClose}
             >
-              Cancel Upload
+              {cancelLabel}
             </button>
           </div>
 

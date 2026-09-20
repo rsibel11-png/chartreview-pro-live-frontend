@@ -1,5 +1,12 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // MedicalSummaries.tsx — chartreview-native-frontend
+// Updated: 2026-09-20 (live only) — Generate Summary is gated behind a page-credit
+// charge when ANY selected document/part already has already_summarized=true (stamped
+// by the coordinator after a completed run -- see generate_summary.js). Pages are only
+// paid for once at upload; a repeat generation on documents that already produced a
+// completed summary now deducts again via PagePaymentDialog (variant='rerun') + POST
+// /stripe/deduct, mirroring Upload.tsx's payment gate exactly. Free/admin users bypass,
+// same as upload. Brand-new documents in the same batch are still free, as intended.
 // Ported: 2026-05-03 — CRA/TypeScript port of MedicalSummaries v56
 // Fixes: env vars, no base44 imports, all callbacks typed, opts:any,
 //        Array.from for Set spreads, Object.entries typed, MedicalSummaryForm/SummaryViewer inlined as stubs
@@ -9,6 +16,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import MedicalSummaryForm from "./summaries/MedicalSummaryForm";
 import SummaryViewer from "./summaries/SummaryViewer";
+import PagePaymentDialog from "./PagePaymentDialog";
 import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle, Header, ImageRun, HorizontalPositionRelativeFrom, VerticalPositionRelativeFrom, TextWrappingType } from 'docx';
 import { getExportPrefs } from './Settings';
 // Updated: 2026-09-12 — silent Cognito session refresh (fixes long-edit save timeouts)
@@ -244,7 +252,7 @@ const genStore: any = {
 };
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function MedicalSummaries({ onNavigate, idToken, cognitoUser }: { onNavigate?: (page: string) => void; idToken?: string; cognitoUser?: any }) {
+export default function MedicalSummaries({ onNavigate, idToken, cognitoUser, isFreeUser = false }: { onNavigate?: (page: string) => void; idToken?: string; cognitoUser?: any; isFreeUser?: boolean }) {
   const queryClient = useQueryClient();
 
   // Updated: 2026-09-12 — silently refresh the Cognito session before every API call.
@@ -289,6 +297,26 @@ export default function MedicalSummaries({ onNavigate, idToken, cognitoUser }: {
     }
     return count;
   };
+  // Updated: 2026-09-20 (live only) -- sum page_count for any selected doc/part that
+  // already has already_summarized=true (stamped by the coordinator after a completed
+  // run). This is the page total charged again on a re-run; brand-new docs in the same
+  // batch (never summarized) contribute 0 and stay free.
+  const computeRerunPages = (docs: any[]): number => {
+    let pages = 0;
+    for (const doc of docs) {
+      if (doc._is_group && doc._parts?.length) {
+        for (const part of doc._parts) {
+          if (part.already_summarized) pages += (part.page_count || 0);
+        }
+      } else if (doc.already_summarized) {
+        pages += (doc.page_count || 0);
+      }
+    }
+    return pages;
+  };
+  const [showRerunPaymentDialog, setShowRerunPaymentDialog] = useState(false);
+  const [rerunPageCount, setRerunPageCount] = useState(0);
+  const [pendingGenerate, setPendingGenerate] = useState<{ selectedDocs: any[]; emrPagesSelected: number } | null>(null);
   const [viewingSummary, setViewingSummary] = useState<any>(null);
   const [editingSummary, setEditingSummary] = useState<any>(null);
   const [deleteSummary, setDeleteSummary] = useState<any>(null);
@@ -754,14 +782,50 @@ const normalizePTSetting = (setting: string): string => {
   }, {});
 
   // ── Generate summary ───────────────────────────────────────────────────────
+  // Updated: 2026-09-20 (live only) -- gate: builds selectedDocs same as before, then
+  // checks for re-run pages before anything else. A brand-new selection (nothing
+  // already_summarized) or a free/admin user skips straight to runGenerateActual --
+  // same pattern as Upload.tsx's handleUploadAll payment gate.
   const generateSummary = async () => {
     const selectedDocs = groupedDocuments
       .filter((d: any) => selectedDocuments.includes(d.id))
       .sort((a: any, b: any) => (a.id || '').localeCompare(b.id || ''));
     if (selectedDocs.length === 0) { setError("Please select at least one document."); return; }
     const emrPagesSelected = countSelectedEmrPages();
+    const rerunPages = computeRerunPages(selectedDocs);
     setShowDialog(false);
     setSelectedDocuments([]);
+    if (rerunPages > 0 && !isFreeUser) {
+      setPendingGenerate({ selectedDocs, emrPagesSelected });
+      setRerunPageCount(rerunPages);
+      setShowRerunPaymentDialog(true);
+      return;
+    }
+    await runGenerateActual(selectedDocs, emrPagesSelected);
+  };
+
+  // Updated: 2026-09-20 (live only) -- handles the PagePaymentDialog(variant='rerun')
+  // outcome: deducts rerunPageCount via POST /stripe/deduct (mirrors Upload.tsx's
+  // handlePaymentProceed exactly), then resumes with the docs that were pending. A
+  // failed deduction blocks generation entirely -- error is shown, nothing runs.
+  const handleRerunPaymentProceed = async (mode: string) => {
+    setShowRerunPaymentDialog(false);
+    if (mode !== "credits" && mode !== "stripe_paid") return;
+    const pending = pendingGenerate;
+    setPendingGenerate(null);
+    if (!pending) return;
+    if (!isFreeUser) {
+      try {
+        await awsProxy("/stripe/deduct", "POST", { pages: rerunPageCount });
+      } catch (err: any) {
+        setError("Credit deduction failed: " + err.message);
+        return;
+      }
+    }
+    await runGenerateActual(pending.selectedDocs, pending.emrPagesSelected);
+  };
+
+  const runGenerateActual = async (selectedDocs: any[], emrPagesSelected: number) => {
     genStore.set({ running: true, statusMsg: "Starting...", completionMsg: "", error: null, elapsedSeconds: 0 });
     if (genStore.state.timerHandle) clearInterval(genStore.state.timerHandle);
     let elapsed = 0;
@@ -1484,6 +1548,18 @@ const normalizePTSetting = (setting: string): string => {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Updated: 2026-09-20 (live only) -- re-run payment gate. Only rendered when
+          computeRerunPages() found already-summarized pages in the current selection. */}
+      <PagePaymentDialog
+        open={showRerunPaymentDialog}
+        onClose={() => { setShowRerunPaymentDialog(false); setPendingGenerate(null); }}
+        estimatedPages={rerunPageCount}
+        onProceed={handleRerunPaymentProceed}
+        idToken={idToken || ""}
+        isFreeUser={isFreeUser}
+        variant="rerun"
+      />
 
       {/* Summaries Grid */}
       {summariesLoading ? (
