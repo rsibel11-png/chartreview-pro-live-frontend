@@ -1259,12 +1259,10 @@ const normalizePTSetting = (setting: string): string => {
               <Trash2 className="w-4 h-4 mr-2" />Delete All
             </Button>
           )}
-          <Button onClick={() => { setVisitIndexDocsSelected([]); setShowVisitIndexDialog(true); }}
-            className="bg-gradient-to-r from-blue-600 to-indigo-600" disabled={visitIndexRunning}>
-            {visitIndexRunning
-              ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Building Index...</>
-              : <><List className="w-4 h-4 mr-2" />Build Visit Index</>}
-          </Button>
+          {/* Hidden: 2026-09-20 -- "Build Visit Index" button removed from live only (dev
+              keeps it). The underlying function/state/dialog are untouched -- Generate Summary
+              already runs the same VI pre-pass internally when needed, so there's no reason a
+              live user would trigger it as its own separate step. */}
           <Button onClick={() => { setSelectedDocuments([]); setError(null); queryClient.invalidateQueries({ queryKey: ["aws-documents-raw"] }); setShowDialog(true); }}
             className="bg-gradient-to-r from-green-600 to-emerald-600">
             <Plus className="w-4 h-4 mr-2" />Generate Summary
