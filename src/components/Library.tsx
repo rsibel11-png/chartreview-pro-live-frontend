@@ -1149,7 +1149,7 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setDeleteDialog(null)}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={() => deleteMutation.mutate(deleteDialog)} className="bg-red-600 hover:bg-red-700">Delete</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1172,7 +1172,7 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setDeleteAllDialog(false)}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={() => deleteAllMutation.mutate(documents as any)}
               disabled={deleteAllMutation.isPending} className="bg-red-600 hover:bg-red-700">
               {deleteAllMutation.isPending
@@ -1234,7 +1234,7 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setDeleteFolderDialog(null)}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={() => deleteFolderMutation.mutate(deleteFolderDialog)}
               disabled={deleteFolderMutation.isPending} className="bg-red-600 hover:bg-red-700">
               {deleteFolderMutation.isPending
