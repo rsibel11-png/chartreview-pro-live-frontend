@@ -1,12 +1,12 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // Login.tsx — chartreview-native-frontend
-// Updated: 2026-09-21 — Added self-service account creation (Cognito signUp +
-// email verification code + auto sign-in on success), gated behind a mode
-// switcher alongside the existing Sign In / admin-created "set new password" flows.
-// No backend changes required: org_id is derived from the Cognito 'sub' claim
-// (auth.js) and per-user credits records are lazily created on first API call
-// (stripe.js ensureUserRecord), so a brand-new self-registered user is fully
-// isolated and provisioned automatically the first time they hit any endpoint.
+// Updated: 2026-09-21 — Added password recovery (Cognito forgotPassword +
+// email reset code + confirmPassword + auto sign-in), alongside the existing
+// self-service account creation and admin-created "set new password" flows.
+// No backend changes required: Cognito's AccountRecoverySetting already
+// falls through to verified_email (no phone numbers are ever collected), so
+// forgotPassword() delivers its code the same way signUp()'s verification
+// code is delivered.
 
 import React, { useState } from 'react';
 import {
@@ -39,7 +39,7 @@ interface LoginProps {
   onLogin: (user: AuthUser) => void;
 }
 
-type Mode = 'signin' | 'signup' | 'verify' | 'newPassword';
+type Mode = 'signin' | 'signup' | 'verify' | 'newPassword' | 'forgot' | 'reset';
 
 // ── Password policy (mirrors the Cognito User Pool policy) ─────────────────
 function passwordPolicyError(pw: string): string | null {
@@ -74,6 +74,12 @@ export default function Login({ onLogin }: LoginProps) {
   const [verificationCode,     setVerificationCode]     = useState('');
   const [signupUser,           setSignupUser]           = useState<CognitoUser | null>(null);
   const [resendCooldown,       setResendCooldown]       = useState(false);
+
+  // ── Password recovery state ────────────────────────────────────────────────
+  const [resetCode,            setResetCode]            = useState('');
+  const [resetPassword,        setResetPassword]        = useState('');
+  const [resetPasswordAgain,   setResetPasswordAgain]   = useState('');
+  const [forgotUser,           setForgotUser]           = useState<CognitoUser | null>(null);
 
   const resetMessages = () => {
     setError(null);
@@ -224,6 +230,76 @@ export default function Login({ onLogin }: LoginProps) {
       } else {
         setInfo(`A new code was sent to ${email.trim()}.`);
       }
+    });
+  };
+
+  // ── Password recovery ───────────────────────────────────────────────────────
+  const handleForgotPassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    resetMessages();
+
+    if (!email.trim()) {
+      setError('Enter your email first');
+      return;
+    }
+
+    setLoading(true);
+    const cognitoUser = new CognitoUser({ Username: email.trim(), Pool: userPool });
+    cognitoUser.forgotPassword({
+      onSuccess: () => {
+        setLoading(false);
+        setForgotUser(cognitoUser);
+        setInfo(`We sent a password reset code to ${email.trim()}.`);
+        setMode('reset');
+      },
+      onFailure: (err: any) => {
+        setLoading(false);
+        if (err.code === 'UserNotFoundException') {
+          // Don't reveal whether the account exists — same UX either way.
+          setForgotUser(cognitoUser);
+          setInfo(`If an account exists for ${email.trim()}, a reset code was sent.`);
+          setMode('reset');
+        } else {
+          setError(err.message || 'Could not send reset code');
+        }
+      },
+    });
+  };
+
+  const handleResetPassword = (e: React.FormEvent) => {
+    e.preventDefault();
+    resetMessages();
+
+    if (!forgotUser) {
+      setError('Something went wrong — please request a new reset code.');
+      setMode('forgot');
+      return;
+    }
+    if (resetPassword !== resetPasswordAgain) {
+      setError('Passwords do not match');
+      return;
+    }
+    const pwErr = passwordPolicyError(resetPassword);
+    if (pwErr) {
+      setError(pwErr);
+      return;
+    }
+
+    setLoading(true);
+    forgotUser.confirmPassword(resetCode.trim(), resetPassword, {
+      onSuccess: () => {
+        signIn(email, resetPassword);
+      },
+      onFailure: (err: any) => {
+        setLoading(false);
+        if (err.code === 'CodeMismatchException') {
+          setError('Incorrect reset code. Please try again.');
+        } else if (err.code === 'ExpiredCodeException') {
+          setError('That code expired. Request a new one.');
+        } else {
+          setError(err.message || 'Could not reset password');
+        }
+      },
     });
   };
 
@@ -407,6 +483,106 @@ export default function Login({ onLogin }: LoginProps) {
     );
   }
 
+  // ── Render: forgot password — request reset code ─────────────────────────
+  if (mode === 'forgot') {
+    return (
+      <Shell title="Reset Password" subtitle="We'll email you a reset code" icon={<Lock className="w-7 h-7 text-white" />}>
+        <form onSubmit={handleForgotPassword} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="email"
+                value={email}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="you@example.com"
+                required
+                autoFocus
+              />
+            </div>
+          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold rounded-lg transition-all duration-200 disabled:opacity-60"
+          >
+            {loading ? 'Sending code…' : 'Send Reset Code'}
+          </button>
+          <p className="text-center text-sm text-slate-500 mt-2">
+            <button type="button" onClick={() => switchMode('signin')} className="text-blue-600 hover:text-blue-700 font-medium">
+              Back to sign in
+            </button>
+          </p>
+        </form>
+      </Shell>
+    );
+  }
+
+  // ── Render: reset password — enter code + new password ───────────────────
+  if (mode === 'reset') {
+    return (
+      <Shell title="Set New Password" subtitle={`Enter the code sent to ${email.trim()}`} icon={<Lock className="w-7 h-7 text-white" />}>
+        <form onSubmit={handleResetPassword} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Reset Code</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={resetCode}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setResetCode(e.target.value)}
+              className="w-full px-4 py-3 border border-slate-300 rounded-lg text-sm tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="123456"
+              required
+              autoFocus
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">New Password</label>
+            <input
+              type={showPass ? 'text' : 'password'}
+              value={resetPassword}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setResetPassword(e.target.value)}
+              className="w-full px-4 py-3 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Min 12 characters, mixed case, number, symbol"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Confirm Password</label>
+            <input
+              type={showPass ? 'text' : 'password'}
+              value={resetPasswordAgain}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setResetPasswordAgain(e.target.value)}
+              className="w-full px-4 py-3 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Repeat password"
+              required
+            />
+          </div>
+          <label className="flex items-center gap-2 text-xs text-slate-500">
+            <input type="checkbox" checked={showPass} onChange={() => setShowPass(!showPass)} />
+            Show passwords
+          </label>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold rounded-lg transition-all duration-200 disabled:opacity-60 mt-2"
+          >
+            {loading ? 'Resetting…' : 'Reset Password & Sign In'}
+          </button>
+          <button
+            type="button"
+            onClick={handleForgotPassword}
+            className="w-full text-center text-sm text-blue-600 hover:text-blue-700"
+          >
+            Resend code
+          </button>
+        </form>
+      </Shell>
+    );
+  }
+
   // ── Render: main sign-in form ─────────────────────────────────────────────
   return (
     <Shell title="ChartReview Pro" subtitle="Medical-Legal Document Management" icon={<FileText className="w-7 h-7 text-white" />}>
@@ -428,7 +604,12 @@ export default function Login({ onLogin }: LoginProps) {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-sm font-medium text-slate-700">Password</label>
+            <button type="button" onClick={() => switchMode('forgot')} className="text-xs text-blue-600 hover:text-blue-700 font-medium">
+              Forgot password?
+            </button>
+          </div>
           <div className="relative">
             <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
