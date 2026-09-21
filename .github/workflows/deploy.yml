@@ -6,6 +6,18 @@ on:
       - main
   workflow_dispatch:
 
+# Added 2026-09-21 -- two pushes landing seconds apart triggered two concurrent runs that
+# both ran `aws s3 sync build/ ... --delete` against the same bucket at once. They raced:
+# one run's index.html got written after the other run's JS bundle was deleted, leaving a
+# mismatched index.html/main.js pair in S3 and a blank white screen in production (no code
+# bug -- confirmed by re-running a single solo deploy, which fixed it immediately).
+# cancel-in-progress: false means a run in progress is never killed mid-sync (which could
+# leave S3 in an even worse half-written state) -- new runs simply queue and wait their turn,
+# so every deploy that starts still finishes as one complete, internally-consistent sync.
+concurrency:
+  group: deploy-live-frontend
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
