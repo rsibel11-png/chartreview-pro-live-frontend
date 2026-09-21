@@ -7,6 +7,13 @@
 // completed summary now deducts again via PagePaymentDialog (variant='rerun') + POST
 // /stripe/deduct, mirroring Upload.tsx's payment gate exactly. Free/admin users bypass,
 // same as upload. Brand-new documents in the same batch are still free, as intended.
+// Updated: 2026-09-21 — Replaced the "generating" banner's counting-up mm:ss
+// timer with a percent-complete status bar (matches Upload.tsx's Progress look).
+// Frontend-only: the backend job status is still free text (no numeric percent
+// field), so estimateProgressFromStatus() parses real counts where present
+// ("4 of 12 workers complete") and maps the rest to fixed pipeline stage
+// percentages, monotonically increasing. The final green completion banner is
+// unchanged and still reports total elapsed time ("in Xm Ys").
 // Ported: 2026-05-03 — CRA/TypeScript port of MedicalSummaries v56
 // Fixes: env vars, no base44 imports, all callbacks typed, opts:any,
 //        Array.from for Set spreads, Object.entries typed, MedicalSummaryForm/SummaryViewer inlined as stubs
@@ -54,6 +61,19 @@ function Button({ children, onClick, disabled, className = "", variant = "defaul
       className={`${base} ${variants[variant] || variants.default} ${sizes[size] || sizes.default} ${className}`}>
       {children}
     </button>
+  );
+}
+
+// Updated: 2026-09-21 — added for the Generate Summary progress bar (mirrors
+// Upload.tsx's Progress primitive exactly, same markup/classes).
+function Progress({ value, className = "" }: { value: number; className?: string }) {
+  return (
+    <div className={`w-full bg-slate-200 rounded-full overflow-hidden ${className}`}>
+      <div
+        className="bg-blue-500 h-full transition-all duration-300"
+        style={{ width: `${Math.min(100, Math.max(0, value))}%` }}
+      />
+    </div>
   );
 }
 
@@ -236,11 +256,65 @@ const Save = ({ className = "" }) => (
 
 
 
+// ── Progress estimation for the Generate Summary status bar ──────────────────
+// Updated: 2026-09-21 — Roman asked to replace the counting-up mm:ss timer on the
+// "generating" banner with a percent-complete status bar (matching Upload.tsx's
+// look). The backend job status (/jobs/{job_id}) returns a free-text status_msg,
+// not a numeric percent -- some messages carry real counts (e.g. "4 of 12 workers
+// complete") which we parse directly; the rest are fixed pipeline stages mapped to
+// approximate percentages in the order they actually occur (see setJobStatus calls
+// in generate_summary.js). Returns null for unrecognized text so the caller can
+// keep the previous percent instead of guessing.
+function estimateProgressFromStatus(msg: string): number | null {
+  if (!msg) return null;
+  const m = msg.toLowerCase();
+
+  // Real counts, when present, are the most reliable signal.
+  let match = msg.match(/(\d+)\s+of\s+(\d+)\s+workers complete/i);
+  if (match) {
+    const done = parseInt(match[1], 10), total = parseInt(match[2], 10);
+    const frac = total > 0 ? done / total : 0;
+    return Math.round(20 + frac * 55); // main parallel batch phase: 20% -> 75%
+  }
+  match = msg.match(/batches\s+\d+[–-](\d+)\s+of\s+(\d+)/i);
+  if (match) {
+    const upTo = parseInt(match[1], 10), total = parseInt(match[2], 10);
+    const frac = total > 0 ? upTo / total : 0;
+    return Math.round(15 + frac * 5); // dispatch phase, small band
+  }
+
+  // Fixed pipeline stages, in the order they occur.
+  if (m.includes('starting')) return 2;
+  if (m.includes('sending') && m.includes('documents to chartreview ai')) return 5;
+  if (m.includes('sending documents for processing')) return 8;
+  if (m.includes('loading pre-pass')) return 10;
+  if (m.includes('building encounter checklist')) return 13;
+  if (m.includes('launching') && m.includes('parallel workers')) return 18;
+  if (m.includes('merging and deduplicating')) return 85;
+  if (m.includes('merging results')) return 80;
+  if (m.includes('recovery pass')) return 90;
+  if (m.includes('saving summary')) return 97;
+  if (m.includes('saving') && m.includes('visits')) return 95;
+  if (m === 'processing...') return 75;
+  return null;
+}
+
+// Sets statusMsg and derives progressPercent from it in one call; percent is
+// clamped to never move backward.
+function setGenStatus(msg: string) {
+  const estimated = estimateProgressFromStatus(msg);
+  const prev = genStore.state.progressPercent || 0;
+  genStore.set({
+    statusMsg: msg,
+    progressPercent: estimated !== null ? Math.max(prev, estimated) : prev,
+  });
+}
+
 // ── Module-level generation store ─────────────────────────────────────────────
 const genStore: any = {
   state: {
     running: false, statusMsg: "", completionMsg: "", error: null,
-    elapsedSeconds: 0, timerHandle: null,
+    elapsedSeconds: 0, timerHandle: null, progressPercent: 0,
   },
   listeners: new Set<(s: any) => void>(),
   notify() { this.listeners.forEach((fn: any) => fn({ ...this.state })); },
@@ -356,6 +430,7 @@ export default function MedicalSummaries({ onNavigate, idToken, cognitoUser, isF
   const completionMsg = genState.completionMsg;
   const error = genState.error;
   const elapsedSeconds = genState.elapsedSeconds;
+  const progressPercent = genState.progressPercent || 0;
   const setError = (msg: string | null) => genStore.set({ error: msg });
 
   // ── Queries ────────────────────────────────────────────────────────────────
@@ -826,7 +901,7 @@ const normalizePTSetting = (setting: string): string => {
   };
 
   const runGenerateActual = async (selectedDocs: any[], emrPagesSelected: number) => {
-    genStore.set({ running: true, statusMsg: "Starting...", completionMsg: "", error: null, elapsedSeconds: 0 });
+    genStore.set({ running: true, statusMsg: "Starting...", completionMsg: "", error: null, elapsedSeconds: 0, progressPercent: 2 });
     if (genStore.state.timerHandle) clearInterval(genStore.state.timerHandle);
     let elapsed = 0;
     const timerHandle = setInterval(() => { elapsed += 1; genStore.set({ elapsedSeconds: elapsed }); }, 1000);
@@ -851,14 +926,14 @@ const normalizePTSetting = (setting: string): string => {
         clearInterval(timerHandle);
         return;
       }
-      genStore.set({ statusMsg: `Sending ${docIds.length} documents to ChartReview AI...` });
+      setGenStatus(`Sending ${docIds.length} documents to ChartReview AI...`);
       const startRes = await awsProxy('/summaries/generate', 'POST', {
         doc_ids: docIds, patient_name: '', run_vi_prepass: true, include_all_pt: includeAllPt,
         exclude_emr: narrativeOnly && emrPagesSelected > 0, // narrative-only run (EMR Detector results)
       });
       const job_id = startRes?.job_id;
       if (!job_id) throw new Error('No job_id returned from generateSummaryStart');
-      genStore.set({ statusMsg: 'Sending documents for processing...' });
+      setGenStatus('Sending documents for processing...');
       let jobResult: any = null;
       const POLL_INTERVAL_MS = 5000;
       const MAX_POLLS = 360;
@@ -867,7 +942,7 @@ const normalizePTSetting = (setting: string): string => {
         const jobStatus = await awsProxy(`/jobs/${job_id}`, 'GET');
         if (jobStatus?.status === 'complete') { jobResult = jobStatus.result; break; }
         if (jobStatus?.status === 'failed') throw new Error('Generation failed: ' + (jobStatus?.error_message || 'unknown error'));
-        genStore.set({ statusMsg: jobStatus?.status_msg || 'Processing...' });
+        setGenStatus(jobStatus?.status_msg || 'Processing...');
       }
       if (!jobResult) throw new Error('Generation timed out after 30 minutes');
       const rawVisits: any[] = Array.isArray(jobResult.visits) ? jobResult.visits : [];
@@ -881,7 +956,7 @@ const normalizePTSetting = (setting: string): string => {
       // Backend coordinator already saved the summary record (with case_number, polishing status).
       // Only POST if aws_summary_id is absent (e.g. older backend without coordinator save).
       if (!jobResult.aws_summary_id) {
-        genStore.set({ statusMsg: 'Saving summary...' });
+        setGenStatus('Saving summary...');
         try {
           await awsProxy('/summaries', 'POST', {
             patient_name: patientName,
@@ -1338,10 +1413,13 @@ const normalizePTSetting = (setting: string): string => {
       {generatingSummary && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-center gap-4">
           <Loader2 className="w-5 h-5 text-blue-600 animate-spin flex-shrink-0" />
-          <div className="flex-1"><p className="text-sm font-medium text-blue-800">{statusMsg || "Generating..."}</p></div>
-          <span className="text-sm font-mono text-blue-600">
-            {Math.floor(elapsedSeconds / 60)}:{String(elapsedSeconds % 60).padStart(2, "0")}
-          </span>
+          <div className="flex-1">
+            <div className="flex items-center justify-between gap-3 mb-1.5">
+              <p className="text-sm font-medium text-blue-800">{statusMsg || "Generating..."}</p>
+              <span className="text-sm font-mono text-blue-600 shrink-0">{progressPercent}%</span>
+            </div>
+            <Progress value={progressPercent} className="h-1.5" />
+          </div>
         </div>
       )}
       {completionMsg && !generatingSummary && (
