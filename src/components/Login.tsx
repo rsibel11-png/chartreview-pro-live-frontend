@@ -51,6 +51,55 @@ function passwordPolicyError(pw: string): string | null {
   return null;
 }
 
+// ── Shared shell ─────────────────────────────────────────────────────────────
+// IMPORTANT: this must live at module scope, not inside Login(). A component
+// defined inside another component's render body gets a brand-new function
+// identity every render, which forces React to unmount+remount the whole
+// subtree on every keystroke -- and any autoFocus input inside re-fires,
+// stealing focus back on every render. (This caused the "focus jumps back to
+// email" bug on Create Account / Verify / Forgot / Reset screens.)
+function Shell({ title, subtitle, icon, error, info, children }: {
+  title: string;
+  subtitle: string;
+  icon: React.ReactNode;
+  error: string | null;
+  info: string | null;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 px-4">
+      <div className="w-full max-w-md">
+        <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-8">
+          <div className="text-center mb-8">
+            <div className="w-14 h-14 bg-gradient-to-br from-blue-600 to-cyan-500 rounded-2xl flex items-center justify-center shadow-lg mx-auto mb-4">
+              {icon}
+            </div>
+            <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
+            <p className="text-slate-500 text-sm mt-1">{subtitle}</p>
+          </div>
+
+          {error && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
+              {error}
+            </div>
+          )}
+          {info && !error && (
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg text-sm">
+              {info}
+            </div>
+          )}
+
+          {children}
+
+          <p className="text-center text-xs text-slate-400 mt-6">
+            HIPAA-compliant • Secure access only
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 export default function Login({ onLogin }: LoginProps) {
   const [mode, setMode] = useState<Mode>('signin');
@@ -308,44 +357,10 @@ export default function Login({ onLogin }: LoginProps) {
     setMode(next);
   };
 
-  // ── Shared shell ───────────────────────────────────────────────────────────
-  const Shell = ({ title, subtitle, icon, children }: { title: string; subtitle: string; icon: React.ReactNode; children: React.ReactNode }) => (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 px-4">
-      <div className="w-full max-w-md">
-        <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-8">
-          <div className="text-center mb-8">
-            <div className="w-14 h-14 bg-gradient-to-br from-blue-600 to-cyan-500 rounded-2xl flex items-center justify-center shadow-lg mx-auto mb-4">
-              {icon}
-            </div>
-            <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
-            <p className="text-slate-500 text-sm mt-1">{subtitle}</p>
-          </div>
-
-          {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
-              {error}
-            </div>
-          )}
-          {info && !error && (
-            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg text-sm">
-              {info}
-            </div>
-          )}
-
-          {children}
-
-          <p className="text-center text-xs text-slate-400 mt-6">
-            HIPAA-compliant • Secure access only
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-
   // ── Render: admin-created user must set a new password ───────────────────
   if (needsNewPassword) {
     return (
-      <Shell title="Set New Password" subtitle="Your account requires a new password" icon={<Lock className="w-7 h-7 text-white" />}>
+      <Shell error={error} info={info} title="Set New Password" subtitle="Your account requires a new password" icon={<Lock className="w-7 h-7 text-white" />}>
         <form onSubmit={handleNewPassword} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">New Password</label>
@@ -384,7 +399,7 @@ export default function Login({ onLogin }: LoginProps) {
   // ── Render: verify email code (new self-signup) ──────────────────────────
   if (mode === 'verify') {
     return (
-      <Shell title="Verify Your Email" subtitle={`Enter the code sent to ${email.trim()}`} icon={<Mail className="w-7 h-7 text-white" />}>
+      <Shell error={error} info={info} title="Verify Your Email" subtitle={`Enter the code sent to ${email.trim()}`} icon={<Mail className="w-7 h-7 text-white" />}>
         <form onSubmit={handleVerify} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Verification Code</label>
@@ -422,7 +437,7 @@ export default function Login({ onLogin }: LoginProps) {
   // ── Render: create account ────────────────────────────────────────────────
   if (mode === 'signup') {
     return (
-      <Shell title="Create Account" subtitle="Set up your ChartReview Pro access" icon={<FileText className="w-7 h-7 text-white" />}>
+      <Shell error={error} info={info} title="Create Account" subtitle="Set up your ChartReview Pro access" icon={<FileText className="w-7 h-7 text-white" />}>
         <form onSubmit={handleSignUp} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
@@ -486,7 +501,7 @@ export default function Login({ onLogin }: LoginProps) {
   // ── Render: forgot password — request reset code ─────────────────────────
   if (mode === 'forgot') {
     return (
-      <Shell title="Reset Password" subtitle="We'll email you a reset code" icon={<Lock className="w-7 h-7 text-white" />}>
+      <Shell error={error} info={info} title="Reset Password" subtitle="We'll email you a reset code" icon={<Lock className="w-7 h-7 text-white" />}>
         <form onSubmit={handleForgotPassword} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
@@ -523,7 +538,7 @@ export default function Login({ onLogin }: LoginProps) {
   // ── Render: reset password — enter code + new password ───────────────────
   if (mode === 'reset') {
     return (
-      <Shell title="Set New Password" subtitle={`Enter the code sent to ${email.trim()}`} icon={<Lock className="w-7 h-7 text-white" />}>
+      <Shell error={error} info={info} title="Set New Password" subtitle={`Enter the code sent to ${email.trim()}`} icon={<Lock className="w-7 h-7 text-white" />}>
         <form onSubmit={handleResetPassword} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Reset Code</label>
@@ -585,7 +600,7 @@ export default function Login({ onLogin }: LoginProps) {
 
   // ── Render: main sign-in form ─────────────────────────────────────────────
   return (
-    <Shell title="ChartReview Pro" subtitle="Medical-Legal Document Management" icon={<FileText className="w-7 h-7 text-white" />}>
+    <Shell error={error} info={info} title="ChartReview Pro" subtitle="Medical-Legal Document Management" icon={<FileText className="w-7 h-7 text-white" />}>
       <form onSubmit={handleLogin} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
