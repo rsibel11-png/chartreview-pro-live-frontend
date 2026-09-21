@@ -1,11 +1,18 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // Login.tsx — chartreview-native-frontend
-// Updated: 2026-05-04 — Cognito email/password auth, JWT stored in memory
+// Updated: 2026-09-21 — Added self-service account creation (Cognito signUp +
+// email verification code + auto sign-in on success), gated behind a mode
+// switcher alongside the existing Sign In / admin-created "set new password" flows.
+// No backend changes required: org_id is derived from the Cognito 'sub' claim
+// (auth.js) and per-user credits records are lazily created on first API call
+// (stripe.js ensureUserRecord), so a brand-new self-registered user is fully
+// isolated and provisioned automatically the first time they hit any endpoint.
 
 import React, { useState } from 'react';
 import {
   CognitoUserPool,
   CognitoUser,
+  CognitoUserAttribute,
   AuthenticationDetails,
   CognitoUserSession,
 } from 'amazon-cognito-identity-js';
@@ -32,37 +39,63 @@ interface LoginProps {
   onLogin: (user: AuthUser) => void;
 }
 
+type Mode = 'signin' | 'signup' | 'verify' | 'newPassword';
+
+// ── Password policy (mirrors the Cognito User Pool policy) ─────────────────
+function passwordPolicyError(pw: string): string | null {
+  if (pw.length < 12) return 'Password must be at least 12 characters';
+  if (!/[A-Z]/.test(pw)) return 'Password must include an uppercase letter';
+  if (!/[a-z]/.test(pw)) return 'Password must include a lowercase letter';
+  if (!/[0-9]/.test(pw)) return 'Password must include a number';
+  if (!/[^A-Za-z0-9]/.test(pw)) return 'Password must include a symbol';
+  return null;
+}
+
 // ── Component ──────────────────────────────────────────────────────────────
 export default function Login({ onLogin }: LoginProps) {
+  const [mode, setMode] = useState<Mode>('signin');
+
   const [email,       setEmail]       = useState('');
   const [password,    setPassword]    = useState('');
   const [showPass,    setShowPass]    = useState(false);
   const [loading,     setLoading]     = useState(false);
   const [error,       setError]       = useState<string | null>(null);
+  const [info,        setInfo]        = useState<string | null>(null);
 
-  // ── New password challenge state ─────────────────────────────────────────
+  // ── New password challenge state (admin-created users) ──────────────────
   const [needsNewPassword,  setNeedsNewPassword]  = useState(false);
   const [newPassword,       setNewPassword]       = useState('');
   const [newPasswordAgain,  setNewPasswordAgain]  = useState('');
   const [pendingUser,       setPendingUser]        = useState<CognitoUser | null>(null);
 
-  // ── Sign in ───────────────────────────────────────────────────────────────
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setLoading(true);
+  // ── Create-account state ──────────────────────────────────────────────────
+  const [signupPassword,       setSignupPassword]       = useState('');
+  const [signupPasswordAgain,  setSignupPasswordAgain]  = useState('');
+  const [verificationCode,     setVerificationCode]     = useState('');
+  const [signupUser,           setSignupUser]           = useState<CognitoUser | null>(null);
+  const [resendCooldown,       setResendCooldown]       = useState(false);
 
-    const cognitoUser = new CognitoUser({ Username: email.trim(), Pool: userPool });
+  const resetMessages = () => {
+    setError(null);
+    setInfo(null);
+  };
+
+  // ── Sign in ───────────────────────────────────────────────────────────────
+  const signIn = (signInEmail: string, signInPassword: string) => {
+    setLoading(true);
+    resetMessages();
+
+    const cognitoUser = new CognitoUser({ Username: signInEmail.trim(), Pool: userPool });
     const authDetails = new AuthenticationDetails({
-      Username: email.trim(),
-      Password: password,
+      Username: signInEmail.trim(),
+      Password: signInPassword,
     });
 
     cognitoUser.authenticateUser(authDetails, {
       onSuccess: (session: CognitoUserSession) => {
         setLoading(false);
         onLogin({
-          email:       email.trim(),
+          email:       signInEmail.trim(),
           idToken:     session.getIdToken().getJwtToken(),
           accessToken: session.getAccessToken().getJwtToken(),
           cognitoUser,
@@ -80,17 +113,23 @@ export default function Login({ onLogin }: LoginProps) {
     });
   };
 
-  // ── Complete new password challenge ───────────────────────────────────────
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    signIn(email, password);
+  };
+
+  // ── Complete new password challenge (admin-created users) ────────────────
   const handleNewPassword = (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
+    resetMessages();
 
     if (newPassword !== newPasswordAgain) {
       setError('Passwords do not match');
       return;
     }
-    if (newPassword.length < 12) {
-      setError('Password must be at least 12 characters');
+    const pwErr = passwordPolicyError(newPassword);
+    if (pwErr) {
+      setError(pwErr);
       return;
     }
 
@@ -112,147 +151,319 @@ export default function Login({ onLogin }: LoginProps) {
     });
   };
 
-  // ── Render: new password form ─────────────────────────────────────────────
-  if (needsNewPassword) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 px-4">
-        <div className="w-full max-w-md">
-          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-8">
-            <div className="text-center mb-8">
-              <div className="w-14 h-14 bg-gradient-to-br from-blue-600 to-cyan-500 rounded-2xl flex items-center justify-center shadow-lg mx-auto mb-4">
-                <Lock className="w-7 h-7 text-white" />
-              </div>
-              <h1 className="text-2xl font-bold text-slate-900">Set New Password</h1>
-              <p className="text-slate-500 text-sm mt-1">Your account requires a new password</p>
-            </div>
+  // ── Create account ────────────────────────────────────────────────────────
+  const handleSignUp = (e: React.FormEvent) => {
+    e.preventDefault();
+    resetMessages();
 
-            {error && (
-              <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
-                {error}
-              </div>
-            )}
+    if (signupPassword !== signupPasswordAgain) {
+      setError('Passwords do not match');
+      return;
+    }
+    const pwErr = passwordPolicyError(signupPassword);
+    if (pwErr) {
+      setError(pwErr);
+      return;
+    }
 
-            <form onSubmit={handleNewPassword} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">New Password</label>
-                <input
-                  type="password"
-                  value={newPassword}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewPassword(e.target.value)}
-                  className="w-full px-4 py-3 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Min 12 characters"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Confirm Password</label>
-                <input
-                  type="password"
-                  value={newPasswordAgain}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewPasswordAgain(e.target.value)}
-                  className="w-full px-4 py-3 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Repeat password"
-                  required
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold rounded-lg transition-all duration-200 disabled:opacity-60"
-              >
-                {loading ? 'Setting password…' : 'Set Password & Sign In'}
-              </button>
-            </form>
-          </div>
-        </div>
-      </div>
-    );
-  }
+    setLoading(true);
+    const attributes = [new CognitoUserAttribute({ Name: 'email', Value: email.trim() })];
 
-  // ── Render: main login form ───────────────────────────────────────────────
-  return (
+    userPool.signUp(email.trim(), signupPassword, attributes, [], (err: any, result: any) => {
+      setLoading(false);
+      if (err) {
+        if (err.code === 'UsernameExistsException') {
+          setError('An account with this email already exists. Try signing in instead.');
+        } else {
+          setError(err.message || 'Could not create account');
+        }
+        return;
+      }
+      setSignupUser(result.user);
+      setInfo(`We sent a verification code to ${email.trim()}.`);
+      setMode('verify');
+    });
+  };
+
+  const handleVerify = (e: React.FormEvent) => {
+    e.preventDefault();
+    resetMessages();
+
+    if (!signupUser) {
+      setError('Something went wrong — please start account creation again.');
+      setMode('signup');
+      return;
+    }
+
+    setLoading(true);
+    signupUser.confirmRegistration(verificationCode.trim(), true, (err: any) => {
+      if (err) {
+        setLoading(false);
+        if (err.code === 'CodeMismatchException') {
+          setError('Incorrect verification code. Please try again.');
+        } else if (err.code === 'ExpiredCodeException') {
+          setError('That code expired. Click "Resend code" below to get a new one.');
+        } else {
+          setError(err.message || 'Verification failed');
+        }
+        return;
+      }
+      // Verified — sign the new user straight in.
+      signIn(email, signupPassword);
+    });
+  };
+
+  const handleResendCode = () => {
+    if (!signupUser || resendCooldown) return;
+    resetMessages();
+    setResendCooldown(true);
+    signupUser.resendConfirmationCode((err: any) => {
+      setResendCooldown(false);
+      if (err) {
+        setError(err.message || 'Could not resend code');
+      } else {
+        setInfo(`A new code was sent to ${email.trim()}.`);
+      }
+    });
+  };
+
+  const switchMode = (next: Mode) => {
+    resetMessages();
+    setMode(next);
+  };
+
+  // ── Shared shell ───────────────────────────────────────────────────────────
+  const Shell = ({ title, subtitle, icon, children }: { title: string; subtitle: string; icon: React.ReactNode; children: React.ReactNode }) => (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-blue-50 px-4">
       <div className="w-full max-w-md">
-
-        {/* Card */}
         <div className="bg-white rounded-2xl shadow-xl border border-slate-200 p-8">
-
-          {/* Logo */}
           <div className="text-center mb-8">
             <div className="w-14 h-14 bg-gradient-to-br from-blue-600 to-cyan-500 rounded-2xl flex items-center justify-center shadow-lg mx-auto mb-4">
-              <FileText className="w-7 h-7 text-white" />
+              {icon}
             </div>
-            <h1 className="text-2xl font-bold text-slate-900">ChartReview Pro</h1>
-            <p className="text-slate-500 text-sm mt-1">Medical-Legal Document Management</p>
+            <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
+            <p className="text-slate-500 text-sm mt-1">{subtitle}</p>
           </div>
 
-          {/* Error */}
           {error && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">
               {error}
             </div>
           )}
-
-          {/* Form */}
-          <form onSubmit={handleLogin} className="space-y-4">
-
-            {/* Email */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="you@example.com"
-                  required
-                  autoFocus
-                />
-              </div>
+          {info && !error && (
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 text-blue-700 rounded-lg text-sm">
+              {info}
             </div>
+          )}
 
-            {/* Password */}
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type={showPass ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-10 py-3 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Your password"
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPass(!showPass)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                >
-                  {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-            </div>
+          {children}
 
-            {/* Submit */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold rounded-lg transition-all duration-200 disabled:opacity-60 mt-2"
-            >
-              {loading ? 'Signing in…' : 'Sign In'}
-            </button>
-
-          </form>
-
-          {/* Footer note */}
           <p className="text-center text-xs text-slate-400 mt-6">
             HIPAA-compliant • Secure access only
           </p>
         </div>
       </div>
     </div>
+  );
+
+  // ── Render: admin-created user must set a new password ───────────────────
+  if (needsNewPassword) {
+    return (
+      <Shell title="Set New Password" subtitle="Your account requires a new password" icon={<Lock className="w-7 h-7 text-white" />}>
+        <form onSubmit={handleNewPassword} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">New Password</label>
+            <input
+              type="password"
+              value={newPassword}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewPassword(e.target.value)}
+              className="w-full px-4 py-3 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Min 12 characters"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Confirm Password</label>
+            <input
+              type="password"
+              value={newPasswordAgain}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setNewPasswordAgain(e.target.value)}
+              className="w-full px-4 py-3 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Repeat password"
+              required
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold rounded-lg transition-all duration-200 disabled:opacity-60"
+          >
+            {loading ? 'Setting password…' : 'Set Password & Sign In'}
+          </button>
+        </form>
+      </Shell>
+    );
+  }
+
+  // ── Render: verify email code (new self-signup) ──────────────────────────
+  if (mode === 'verify') {
+    return (
+      <Shell title="Verify Your Email" subtitle={`Enter the code sent to ${email.trim()}`} icon={<Mail className="w-7 h-7 text-white" />}>
+        <form onSubmit={handleVerify} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Verification Code</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={verificationCode}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setVerificationCode(e.target.value)}
+              className="w-full px-4 py-3 border border-slate-300 rounded-lg text-sm tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="123456"
+              required
+              autoFocus
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold rounded-lg transition-all duration-200 disabled:opacity-60"
+          >
+            {loading ? 'Verifying…' : 'Verify & Sign In'}
+          </button>
+          <button
+            type="button"
+            onClick={handleResendCode}
+            disabled={resendCooldown}
+            className="w-full text-center text-sm text-blue-600 hover:text-blue-700 disabled:opacity-50"
+          >
+            Resend code
+          </button>
+        </form>
+      </Shell>
+    );
+  }
+
+  // ── Render: create account ────────────────────────────────────────────────
+  if (mode === 'signup') {
+    return (
+      <Shell title="Create Account" subtitle="Set up your ChartReview Pro access" icon={<FileText className="w-7 h-7 text-white" />}>
+        <form onSubmit={handleSignUp} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="email"
+                value={email}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="you@example.com"
+                required
+                autoFocus
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
+            <input
+              type={showPass ? 'text' : 'password'}
+              value={signupPassword}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSignupPassword(e.target.value)}
+              className="w-full px-4 py-3 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Min 12 characters, mixed case, number, symbol"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Confirm Password</label>
+            <input
+              type={showPass ? 'text' : 'password'}
+              value={signupPasswordAgain}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSignupPasswordAgain(e.target.value)}
+              className="w-full px-4 py-3 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Repeat password"
+              required
+            />
+          </div>
+          <label className="flex items-center gap-2 text-xs text-slate-500">
+            <input type="checkbox" checked={showPass} onChange={() => setShowPass(!showPass)} />
+            Show passwords
+          </label>
+          <button
+            type="submit"
+            disabled={loading}
+            className="w-full py-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold rounded-lg transition-all duration-200 disabled:opacity-60 mt-2"
+          >
+            {loading ? 'Creating account…' : 'Create Account'}
+          </button>
+          <p className="text-center text-sm text-slate-500 mt-2">
+            Already have an account?{' '}
+            <button type="button" onClick={() => switchMode('signin')} className="text-blue-600 hover:text-blue-700 font-medium">
+              Sign in
+            </button>
+          </p>
+        </form>
+      </Shell>
+    );
+  }
+
+  // ── Render: main sign-in form ─────────────────────────────────────────────
+  return (
+    <Shell title="ChartReview Pro" subtitle="Medical-Legal Document Management" icon={<FileText className="w-7 h-7 text-white" />}>
+      <form onSubmit={handleLogin} className="space-y-4">
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Email</label>
+          <div className="relative">
+            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="email"
+              value={email}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.target.value)}
+              className="w-full pl-10 pr-4 py-3 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="you@example.com"
+              required
+              autoFocus
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">Password</label>
+          <div className="relative">
+            <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type={showPass ? 'text' : 'password'}
+              value={password}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)}
+              className="w-full pl-10 pr-10 py-3 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Your password"
+              required
+            />
+            <button
+              type="button"
+              onClick={() => setShowPass(!showPass)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+            >
+              {showPass ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+            </button>
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full py-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold rounded-lg transition-all duration-200 disabled:opacity-60 mt-2"
+        >
+          {loading ? 'Signing in…' : 'Sign In'}
+        </button>
+
+        <p className="text-center text-sm text-slate-500 mt-2">
+          New here?{' '}
+          <button type="button" onClick={() => switchMode('signup')} className="text-blue-600 hover:text-blue-700 font-medium">
+            Create an account
+          </button>
+        </p>
+      </form>
+    </Shell>
   );
 }
