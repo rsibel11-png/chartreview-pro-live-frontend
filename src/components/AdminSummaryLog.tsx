@@ -1,4 +1,11 @@
 // AdminSummaryLog.tsx — chartreview-pro-live-frontend
+// Updated: 2026-09-21 — Added a second admin panel, "Users & Usage", below the summaries
+// table: pulls GET /admin/users-report (Cognito signup roster joined against document
+// page-usage and purchase status -- see documents_new.js) and offers its own CSV export.
+// Answers "did a free-trial signup ever become a paying customer, and how much did they
+// use us" without any new tracking -- est_revenue_at_avg_rate_usd is an indirect proxy
+// (pages * an assumed $/page), not real Stripe revenue. Independent query/section; the
+// existing summaries table and its export are untouched.
 // Updated: 2026-09-21 — CSV export now includes a "Cost (USD)" column, sourced from
 // estimated_cost_usd (the true per-run cost -- upload/classify + summary generation --
 // already computed and persisted on the summary record by generate_summary.js). No
@@ -68,6 +75,26 @@ function toCsv(rows: any[]): string {
   return lines.join("\n");
 }
 
+function toUsersCsv(rows: any[]): string {
+  const headers = ["Email", "Signup Date", "Total Pages Run", "First Activity", "Last Activity", "Distinct Active Days", "Page Credits Purchased", "Became Paying Customer", "Est. Revenue (Avg Rate, USD)"];
+  const escape = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const lines = [headers.map(escape).join(",")];
+  rows.forEach((u) => {
+    lines.push([
+      u.email || "",
+      u.signup_date || "",
+      u.total_pages_run ?? 0,
+      u.first_activity || "",
+      u.last_activity || "",
+      u.distinct_active_days ?? 0,
+      u.page_credits_purchased ?? 0,
+      u.became_paying_customer ? "YES" : "NO",
+      u.est_revenue_at_avg_rate_usd != null ? u.est_revenue_at_avg_rate_usd.toFixed(2) : "",
+    ].map(escape).join(","));
+  });
+  return lines.join("\n");
+}
+
 export default function AdminSummaryLog({ idToken, cognitoUser, isFreeUser = false }: { idToken?: string; cognitoUser?: any; isFreeUser?: boolean }) {
   const [openSummary, setOpenSummary] = useState<any | null>(null);
   const [openLoading, setOpenLoading] = useState(false);
@@ -103,6 +130,28 @@ export default function AdminSummaryLog({ idToken, cognitoUser, isFreeUser = fal
     const a = document.createElement("a");
     a.href = url;
     a.download = `all-summaries-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const { data: usersData, isLoading: usersLoading, error: usersError, refetch: refetchUsers } = useQuery({
+    queryKey: ["adminUsersReport"],
+    queryFn: async () => {
+      const result = await awsProxy("/admin/users-report");
+      return (result.users || []) as any[];
+    },
+    enabled: !!isFreeUser,
+  });
+
+  const userRows: any[] = usersData || [];
+
+  const handleExportUsersCsv = () => {
+    const csv = toUsersCsv(userRows);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `users-usage-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -192,6 +241,75 @@ export default function AdminSummaryLog({ idToken, cognitoUser, isFreeUser = fal
                     <td className="px-4 py-3 text-right">
                       <Button variant="outline" onClick={() => handleOpen(s)}>Open</Button>
                     </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      <div className="flex items-center justify-between flex-wrap gap-3 pt-4">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-900">Users &amp; Usage (Admin)</h2>
+          <p className="text-slate-600">Signup date, pages run over time, and purchase status per user — an indirect proxy for ad-spend ROI.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" onClick={() => refetchUsers()} disabled={usersLoading}>
+            {usersLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            Refresh
+          </Button>
+          <Button onClick={handleExportUsersCsv} disabled={!userRows.length}>
+            <Download className="w-4 h-4" />
+            Export CSV
+          </Button>
+        </div>
+      </div>
+
+      {usersError ? (
+        <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded text-sm">{(usersError as any).message}</div>
+      ) : null}
+
+      <Card className="overflow-hidden">
+        {usersLoading ? (
+          <div className="p-10 text-center text-slate-500">
+            <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+            Loading signup and usage data…
+          </div>
+        ) : userRows.length === 0 ? (
+          <div className="p-10 text-center text-slate-500">No users found.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 bg-slate-50 text-left text-slate-500 text-xs uppercase tracking-wide">
+                  <th className="px-4 py-3">Email</th>
+                  <th className="px-4 py-3">Signup Date</th>
+                  <th className="px-4 py-3">Pages Run</th>
+                  <th className="px-4 py-3">Active Days</th>
+                  <th className="px-4 py-3">Last Activity</th>
+                  <th className="px-4 py-3">Paying Customer?</th>
+                  <th className="px-4 py-3">Est. Revenue</th>
+                </tr>
+              </thead>
+              <tbody>
+                {userRows.map((u: any) => (
+                  <tr key={u.email} className="border-b border-slate-100 hover:bg-slate-50">
+                    <td className="px-4 py-3 text-slate-900">{u.email || "—"}</td>
+                    <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
+                      {u.signup_date ? new Date(u.signup_date).toLocaleDateString() : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">{u.total_pages_run ?? 0}</td>
+                    <td className="px-4 py-3 text-slate-600">{u.distinct_active_days ?? 0}</td>
+                    <td className="px-4 py-3 text-slate-600 whitespace-nowrap">
+                      {u.last_activity ? new Date(u.last_activity).toLocaleDateString() : "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge className={u.became_paying_customer ? "bg-green-50 text-green-700 border-green-200" : "bg-slate-50 text-slate-600 border-slate-200"}>
+                        {u.became_paying_customer ? "YES" : "NO"}
+                      </Badge>
+                    </td>
+                    <td className="px-4 py-3 text-slate-600">${(u.est_revenue_at_avg_rate_usd ?? 0).toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>
