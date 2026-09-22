@@ -1,3 +1,4 @@
+// Updated: 2026-09-22 -- Removed the dead REACT_APP_AWS_API_KEY / x-api-key header. It was never real AWS credentials (wrong format), and every backend handler stopped checking it on 2026-09-19 in favor of real Cognito JWT verification -- it was just an inert string being shipped in the JS bundle for no reason.
 // MedicalSummaryForm.tsx
 // Updated: 2026-09-21 — Added a visit sort toggle (Chronological / Provider / Facility) next
 // to "Office Visits (N)". Persisted on the summary as visit_sort_mode (see summaries.js
@@ -24,7 +25,6 @@ import toast from "react-hot-toast";
 // ── Env vars ──────────────────────────────────────────────────────────────────
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || "";
 const ORG_ID      = process.env.REACT_APP_ORG_ID      || "";
-const API_KEY     = process.env.REACT_APP_AWS_API_KEY  || "";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const STRING_VISIT_FIELDS = [
@@ -468,7 +468,6 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken, 
   const awsProxy = async (path: string, method = "GET", data?: any): Promise<any> => {
     const opts: any = {
       method,
-      "x-api-key": API_KEY,
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${await getSessionToken(cognitoUser, idToken)}`, "x-org-id": ORG_ID },
     };
     if (data !== undefined) opts.body = JSON.stringify(data);
