@@ -1,4 +1,9 @@
 // Upload.tsx — chartreview-pro-live-frontend
+// Updated: 2026-09-21 — Zip contents now go through a checkbox review panel (select which
+//   extracted files to actually add) instead of being added automatically.
+// Updated: 2026-09-21 — Added ZIP upload support: client-side unzip (via esm.sh JSZip CDN,
+//   same dynamic-import pattern as pdf-lib below) into accepted PDF/JPG/PNG files, which
+//   then flow through the existing addFiles/page-count/split/upload pipeline unchanged.
 // Updated: 2026-08-30 — Simplified status messages for production (hide internal pipeline steps)
 // Updated: 2026-08-22 — Integrated Stripe per-page payment flow
 // Ported: 2026-05-03 — CRA/TypeScript port of Upload v16
@@ -19,6 +24,21 @@ let _idToken = "";
 
 const MAX_FILE_SIZE_MB   = 100;
 const SPLIT_THRESHOLD_MB = 5;
+
+const ACCEPTED_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png'];
+
+function guessMimeType(filename: string): string {
+  const lower = filename.toLowerCase();
+  if (lower.endsWith('.pdf')) return 'application/pdf';
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
+  if (lower.endsWith('.png')) return 'image/png';
+  return 'application/octet-stream';
+}
+
+function isAcceptedFilename(filename: string): boolean {
+  const lower = filename.toLowerCase();
+  return ACCEPTED_EXTENSIONS.some((ext) => lower.endsWith(ext));
+}
 
 // ── Inlined UI primitives ─────────────────────────────────────────────────────
 function Button({ children, onClick, disabled, className = "", variant = "default", size = "default" }: {
@@ -290,6 +310,59 @@ function enqueueProcess(docId: string): Promise<any> {
   });
 }
 
+// ── Client-side ZIP extraction ────────────────────────────────────────────────
+// JSZip has no native ESM build, so (unlike pdf-lib below) we load it through esm.sh,
+// which transforms the npm package into real ESM on the fly -- verified the served
+// module has genuine `export` statements before relying on it here. Nothing is added
+// to package.json; this mirrors the existing CDN dynamic-import pattern for pdf-lib.
+let _jsZip: any = null;
+
+async function _getJSZip(): Promise<any> {
+  if (_jsZip) return _jsZip;
+  const mod: any = await import("https://esm.sh/jszip@3.10.1" as any);
+  _jsZip = mod.default || mod;
+  return _jsZip;
+}
+
+// Unzips a .zip File client-side into the accepted document files it contains.
+// Skips directories, macOS resource-fork noise (__MACOSX/, .DS_Store/._*), and any
+// entry that isn't a PDF/JPG/PNG. Names are de-duplicated if two entries from
+// different sub-folders share the same base filename.
+async function extractZipFile(zipFile: File): Promise<File[]> {
+  const JSZip: any = await _getJSZip();
+  const buffer = await zipFile.arrayBuffer();
+  const zip = await JSZip.loadAsync(buffer);
+
+  const seenNames = new Set<string>();
+  const extracted: File[] = [];
+
+  const entries = Object.values(zip.files) as any[];
+  for (const entry of entries) {
+    if (entry.dir) continue;
+    if (entry.name.includes('__MACOSX/')) continue;
+
+    const baseName = entry.name.split('/').pop() || entry.name;
+    if (!baseName || baseName.startsWith('.')) continue; // .DS_Store, ._AppleDouble, etc.
+    if (!isAcceptedFilename(baseName)) continue;
+
+    let outName = baseName;
+    if (seenNames.has(outName)) {
+      const dot = outName.lastIndexOf('.');
+      const stem = dot > 0 ? outName.slice(0, dot) : outName;
+      const ext = dot > 0 ? outName.slice(dot) : '';
+      let n = 2;
+      while (seenNames.has(`${stem} (${n})${ext}`)) n++;
+      outName = `${stem} (${n})${ext}`;
+    }
+    seenNames.add(outName);
+
+    const bytes = await entry.async('arraybuffer');
+    extracted.push(new File([bytes], outName, { type: guessMimeType(outName) }));
+  }
+
+  return extracted;
+}
+
 // ── Client-side PDF splitting ─────────────────────────────────────────────────
 let _pdfLib: any = null;
 
@@ -454,6 +527,8 @@ export default function Upload({ onNavigate, idToken = "", isFreeUser = false }:
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
   const [estimatedPageCount, setEstimatedPageCount] = useState(0);
   const [scanningPages, setScanningPages] = useState(false);
+  const [extractingZip, setExtractingZip] = useState(false);
+  const [zipReview, setZipReview] = useState<{ items: { id: string; file: File; checked: boolean }[] } | null>(null);
 
   const addFiles = useCallback((newFiles: File[]) => {
     const items = newFiles.map((f: File) => ({
@@ -482,6 +557,74 @@ export default function Upload({ onNavigate, idToken = "", isFreeUser = false }:
   const updateItem = (id: string, patch: any) =>
     setFileItems((prev: any[]) => prev.map((f: any) => (f.id === id ? { ...f, ...patch } : f)));
 
+  // Detects any .zip among the incoming files, unzips each one client-side into its
+  // accepted PDF/JPG/PNG entries, then hands the combined (non-zip + extracted) file
+  // list to the existing addFiles() -- so page counting, splitting, and upload all
+  // proceed exactly as if the user had picked those files directly.
+  const addFilesFromInput = useCallback(async (incoming: File[]) => {
+    const zipFiles = incoming.filter((f) => f.name.toLowerCase().endsWith(".zip"));
+    const regularFiles = incoming.filter((f) => !f.name.toLowerCase().endsWith(".zip"));
+
+    if (zipFiles.length === 0) {
+      addFiles(regularFiles);
+      return;
+    }
+
+    setExtractingZip(true);
+    setGlobalError(null);
+    try {
+      const extractedBatches: File[][] = [];
+      for (const zipFile of zipFiles) {
+        if (zipFile.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+          setGlobalError(`${zipFile.name} exceeds ${MAX_FILE_SIZE_MB} MB and was skipped.`);
+          continue;
+        }
+        try {
+          const files = await extractZipFile(zipFile);
+          if (files.length === 0) {
+            setGlobalError(`${zipFile.name} contained no PDF/JPG/PNG files.`);
+          }
+          extractedBatches.push(files);
+        } catch (err: any) {
+          setGlobalError(`Failed to unzip ${zipFile.name}: ${err.message || err}`);
+        }
+      }
+      const allExtracted = extractedBatches.flat();
+      // Regular (non-zip) files picked in the same batch are added right away, same as before.
+      if (regularFiles.length > 0) addFiles(regularFiles);
+      // Zip contents go to a review panel instead -- the user checks which ones to actually
+      // add. If a review panel is already open (another zip dropped before this one was
+      // resolved), append rather than clobber the user's in-progress selection.
+      if (allExtracted.length > 0) {
+        const newItems = allExtracted.map((f: File, i: number) => ({
+          id: `zipreview-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 8)}`,
+          file: f,
+          checked: true,
+        }));
+        setZipReview((prev) => ({ items: [...(prev?.items || []), ...newItems] }));
+      }
+    } finally {
+      setExtractingZip(false);
+    }
+  }, [addFiles]);
+
+  const toggleZipReviewItem = (id: string) => {
+    setZipReview((prev) => (prev ? { items: prev.items.map((it) => (it.id === id ? { ...it, checked: !it.checked } : it)) } : prev));
+  };
+
+  const setAllZipReviewChecked = (checked: boolean) => {
+    setZipReview((prev) => (prev ? { items: prev.items.map((it) => ({ ...it, checked })) } : prev));
+  };
+
+  const confirmZipReview = () => {
+    if (!zipReview) return;
+    const selected = zipReview.items.filter((it) => it.checked).map((it) => it.file);
+    setZipReview(null);
+    if (selected.length > 0) addFiles(selected);
+  };
+
+  const cancelZipReview = () => setZipReview(null);
+
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -493,11 +636,11 @@ export default function Upload({ onNavigate, idToken = "", isFreeUser = false }:
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
-    addFiles(Array.from(e.dataTransfer.files));
-  }, [addFiles]);
+    addFilesFromInput(Array.from(e.dataTransfer.files));
+  }, [addFilesFromInput]);
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) addFiles(Array.from(e.target.files));
+    if (e.target.files) addFilesFromInput(Array.from(e.target.files));
     e.target.value = "";
   };
 
@@ -713,22 +856,27 @@ export default function Upload({ onNavigate, idToken = "", isFreeUser = false }:
           onDragOver={handleDrag}
           onDragLeave={handleDrag}
           onDrop={handleDrop}
-          onClick={() => !uploading && !scanningPages && inputRef.current?.click()}
+          onClick={() => !uploading && !scanningPages && !extractingZip && inputRef.current?.click()}
           className={`relative border-2 border-dashed rounded-xl px-6 py-12 text-center cursor-pointer transition-colors ${
             dragActive
               ? "border-blue-400 bg-blue-50"
               : "border-slate-300 bg-white hover:border-blue-300 hover:bg-slate-50"
-          } ${uploading || scanningPages ? "pointer-events-none opacity-60" : ""}`}
+          } ${uploading || scanningPages || extractingZip ? "pointer-events-none opacity-60" : ""}`}
         >
           <input
             ref={inputRef}
             type="file"
             multiple
-            accept=".pdf,.jpg,.jpeg,.png"
+            accept=".pdf,.jpg,.jpeg,.png,.zip"
             className="hidden"
             onChange={handleFileInput}
           />
-          {scanningPages ? (
+          {extractingZip ? (
+            <>
+              <Loader2 className="w-10 h-10 text-blue-400 mx-auto mb-3 animate-spin" />
+              <p className="text-slate-600 font-medium">Extracting zip…</p>
+            </>
+          ) : scanningPages ? (
             <>
               <Loader2 className="w-10 h-10 text-blue-400 mx-auto mb-3 animate-spin" />
               <p className="text-slate-600 font-medium">Scanning pages…</p>
@@ -737,10 +885,10 @@ export default function Upload({ onNavigate, idToken = "", isFreeUser = false }:
             <>
               <UploadIcon className="w-10 h-10 text-slate-300 mx-auto mb-3" />
               <p className="text-slate-600 font-medium">
-                Drop PDFs here or <span className="text-blue-600 underline underline-offset-2">click to browse</span>
+                Drop PDFs or a ZIP file here or <span className="text-blue-600 underline underline-offset-2">click to browse</span>
               </p>
               <p className="text-xs text-slate-400 mt-1">
-                PDF, JPG, PNG — Max {MAX_FILE_SIZE_MB} MB
+                PDF, JPG, PNG, ZIP — Max {MAX_FILE_SIZE_MB} MB
               </p>
             </>
           )}
@@ -751,6 +899,62 @@ export default function Upload({ onNavigate, idToken = "", isFreeUser = false }:
           <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700">
             <AlertCircle className="w-4 h-4 shrink-0" />
             {globalError}
+          </div>
+        )}
+
+        {/* Zip contents review — pick which extracted files to actually add */}
+        {zipReview && (
+          <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+              <span className="text-sm font-semibold text-slate-700">
+                Select files from zip ({zipReview.items.filter((it) => it.checked).length}/{zipReview.items.length})
+              </span>
+              <div className="flex gap-3">
+                <button
+                  className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                  onClick={() => setAllZipReviewChecked(true)}
+                >
+                  Select All
+                </button>
+                <button
+                  className="text-xs text-slate-400 hover:text-slate-600"
+                  onClick={() => setAllZipReviewChecked(false)}
+                >
+                  Deselect All
+                </button>
+              </div>
+            </div>
+            <div className="divide-y divide-slate-100 px-3 py-2 space-y-1 max-h-80 overflow-y-auto">
+              {zipReview.items.map((it) => (
+                <label
+                  key={it.id}
+                  className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-50 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={it.checked}
+                    onChange={() => toggleZipReviewItem(it.id)}
+                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <FileText className="w-4 h-4 text-slate-400 shrink-0" />
+                  <span className="flex-1 min-w-0 text-sm text-slate-700 truncate">{it.file.name}</span>
+                  <span className="text-xs text-slate-400 shrink-0">{formatSize(it.file.size)}</span>
+                </label>
+              ))}
+            </div>
+            <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-slate-100 bg-slate-50">
+              <Button variant="outline" size="sm" onClick={cancelZipReview}>
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                onClick={confirmZipReview}
+                disabled={zipReview.items.every((it) => !it.checked)}
+              >
+                Add {zipReview.items.filter((it) => it.checked).length} file
+                {zipReview.items.filter((it) => it.checked).length === 1 ? "" : "s"}
+              </Button>
+            </div>
           </div>
         )}
 
@@ -790,7 +994,7 @@ export default function Upload({ onNavigate, idToken = "", isFreeUser = false }:
         {pendingCount > 0 && (
           <Button
             onClick={handleUploadAll}
-            disabled={uploading || scanningPages}
+            disabled={uploading || scanningPages || extractingZip}
             className="w-full h-12 text-base font-semibold bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600 shadow-md"
           >
             {uploading ? (
