@@ -1,4 +1,8 @@
 // PagePaymentDialog.tsx — chartreview-pro-live-frontend
+// Updated: 2026-09-21 — New-user signup grant is 1000 free pages now (was 100). Relabeled
+//   the credits-breakdown tile from "Free Monthly" to "Free Pages" -- it was never actually
+//   a recurring monthly grant (the backend set a free_pages_reset_date but nothing ever
+//   read it to re-grant pages), so the old label overstated the benefit. See stripe.js.
 // Updated: 2026-09-21 — Pay-exact-page-count (no bundle) purchases now cost a flat
 //   $0.15/page via Stripe card checkout, instead of the tiered bundle rate (which used
 //   to give the Starter $0.10/page rate to someone buying only e.g. 40 pages, same as a
@@ -303,7 +307,7 @@ export default function PagePaymentDialog({
               <div className="grid grid-cols-3 gap-3 text-center text-sm">
                 <div>
                   <div className="font-bold text-green-700">{credits.free_pages_remaining}</div>
-                  <div className="text-slate-500 text-xs">Free Monthly</div>
+                  <div className="text-slate-500 text-xs">Free Pages</div>
                 </div>
                 <div>
                   <div className="font-bold text-cyan-700">{credits.page_credits}</div>
