@@ -1,4 +1,9 @@
 // AdminSummaryLog.tsx — chartreview-pro-live-frontend
+// Updated: 2026-09-21 — CSV export now includes a "Cost (USD)" column, sourced from
+// estimated_cost_usd (the true per-run cost -- upload/classify + summary generation --
+// already computed and persisted on the summary record by generate_summary.js). No
+// backend change needed: listAllHandler already returns the full item, this field
+// included.
 // Added: 2026-09-21 — admin-only page listing every user's summaries (backend resolves
 // each org_id to the owning user's email via Cognito AdminGetUser when called with
 // ?all=true; see summaries.js). Read-only: clicking a row shows its visits in a simple
@@ -46,7 +51,7 @@ const statusBadgeClass = (status: string) => {
 };
 
 function toCsv(rows: any[]): string {
-  const headers = ["Created", "User Email", "Patient", "Case Number", "Status", "Summary ID"];
+  const headers = ["Created", "User Email", "Patient", "Case Number", "Status", "Cost (USD)", "Summary ID"];
   const escape = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
   const lines = [headers.map(escape).join(",")];
   rows.forEach((s) => {
@@ -56,6 +61,7 @@ function toCsv(rows: any[]): string {
       s.patient_name || "",
       s.case_number || "",
       s.status || "",
+      s.estimated_cost_usd != null ? s.estimated_cost_usd.toFixed(4) : "",
       s.aws_summary_id || s.id || "",
     ].map(escape).join(","));
   });
