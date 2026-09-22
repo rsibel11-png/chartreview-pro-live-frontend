@@ -1,5 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // App.tsx — chartreview-pro-live-frontend
+// Updated: 2026-09-21 — Hide Split PDF page from live production (Upload now auto-splits
+//   large PDFs and zips on its own, up to 500MB -- manual splitting is redundant)
 // Updated: 2026-09-21 — Added admin-only 'All Summaries' page (Cognito email resolution, CSV export), visible only to FREE_USERS (Roman)
 // Updated: 2026-08-30 — Hide Visit Index page from live production
 // Updated: 2026-08-30 — Added SplitPdf page for client-side PDF splitting
@@ -31,7 +33,6 @@ const queryClient = new QueryClient({
 const NAV_ITEMS = [
   { name: 'Dashboard',        label: 'Dashboard',          Icon: LayoutDashboard },
   { name: 'Upload',           label: 'Upload Documents',   Icon: Upload          },
-  { name: 'SplitPdf',        label: 'Split PDF',           Icon: Scissors        },
   { name: 'Library',          label: 'Document Library',   Icon: Library         },
   { name: 'MedicalSummaries', label: 'Medical Summaries',  Icon: FileCheck       },
   { name: 'Settings',         label: 'Settings',           Icon: SettingsIcon    },
@@ -89,7 +90,6 @@ function AppInner() {
     switch (currentPage) {
       case 'Dashboard':        return <DashboardAny onNavigate={navigate} {...authProps} />;
       case 'Upload':           return <UploadAny    onNavigate={navigate} {...authProps} />;
-      case 'SplitPdf':        return <SplitPdfAny   onNavigate={navigate} />;
       case 'Library':          return <LibraryAny   onNavigate={navigate} {...authProps} />;
       case 'MedicalSummaries': return <MedSumAny    onNavigate={navigate} {...authProps} />;
       case 'Settings':         return <SettingsAny  onNavigate={navigate} {...authProps} />;
