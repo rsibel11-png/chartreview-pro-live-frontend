@@ -9,6 +9,12 @@
 // Updated: 2026-08-30 — Fixed PDF letterhead: pdfjs-dist 3.11.174 has no ESM build, dynamic import() returned no exports.
 //   Now uses classic <script> tag loader (_getPdfjs), same working pattern as Library.tsx.
 // Updated: 2026-08-30 — Removed auto-detect feature, letterhead now accepts PDF (rendered to PNG via pdf.js)
+// Updated: 2026-09-22 — Reject Word docs (.doc/.docx) up front with a clear popup telling
+//   the user to save as PDF first. Previously a .docx would silently fall through to the
+//   image-upload branch, fail to load as an <img>, and end up stored as raw base64 of the
+//   .docx file itself -- a broken "letterhead" that only surfaced as a failure at export
+//   time with no explanation. Docs opened via the OS "All files" picker option, bypassing
+//   the <input accept=...> filter, are how this reached the user despite that filter.
 
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -333,6 +339,17 @@ export default function Settings({ onNavigate, idToken }: { onNavigate?: (p: str
   const handleLetterheadUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    const nameLower = file.name.toLowerCase();
+    const isWordDoc = nameLower.endsWith('.docx') || nameLower.endsWith('.doc')
+      || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      || file.type === 'application/msword';
+    if (isWordDoc) {
+      alert("Word documents can't be used as a letterhead. Please save it as a PDF first (in Word: File > Save As > PDF), then upload the PDF here instead.");
+      if (letterheadInputRef.current) letterheadInputRef.current.value = '';
+      return;
+    }
+
     setUploadingLetterhead(true);
 
     // If PDF, render page 1 to PNG via pdf.js (classic script load — matches Library.tsx's _getPdfjs pattern;
