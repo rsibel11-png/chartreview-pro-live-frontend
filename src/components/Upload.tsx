@@ -1,4 +1,10 @@
 // Upload.tsx — chartreview-pro-live-frontend
+// Updated: 2026-09-21 — Removed the 100MB ceiling as the real blocker for large files: PDFs
+//   over SPLIT_THRESHOLD_MB now bypass MAX_FILE_SIZE_MB and go straight to the existing
+//   auto-split path (up to MAX_SPLITTABLE_PDF_MB, a browser-memory safety net, not a real
+//   cap). The zip container's own size check no longer reuses MAX_FILE_SIZE_MB either --
+//   zips get their own much higher MAX_ZIP_SIZE_MB ceiling since bundling many small valid
+//   files can easily push a zip past 100MB with nothing wrong inside it.
 // Updated: 2026-09-21 — Zip contents now go through a checkbox review panel (select which
 //   extracted files to actually add) instead of being added automatically.
 // Updated: 2026-09-21 — Added ZIP upload support: client-side unzip (via esm.sh JSZip CDN,
@@ -22,8 +28,10 @@ const ORG_ID      = process.env.REACT_APP_ORG_ID      || "";
 const API_KEY     = process.env.REACT_APP_AWS_API_KEY  || "";
 let _idToken = "";
 
-const MAX_FILE_SIZE_MB   = 100;
-const SPLIT_THRESHOLD_MB = 5;
+const MAX_FILE_SIZE_MB       = 100; // hard cap for non-PDFs (JPG/PNG can't be split)
+const SPLIT_THRESHOLD_MB     = 5;   // PDFs over this get auto-split into 50-page chunks
+const MAX_SPLITTABLE_PDF_MB  = 500; // browser-memory safety net for PDFs going through split
+const MAX_ZIP_SIZE_MB        = 1000; // safety net for the zip container itself (pre-extraction)
 
 const ACCEPTED_EXTENSIONS = ['.pdf', '.jpg', '.jpeg', '.png'];
 
@@ -575,8 +583,8 @@ export default function Upload({ onNavigate, idToken = "", isFreeUser = false }:
     try {
       const extractedBatches: File[][] = [];
       for (const zipFile of zipFiles) {
-        if (zipFile.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
-          setGlobalError(`${zipFile.name} exceeds ${MAX_FILE_SIZE_MB} MB and was skipped.`);
+        if (zipFile.size > MAX_ZIP_SIZE_MB * 1024 * 1024) {
+          setGlobalError(`${zipFile.name} exceeds ${MAX_ZIP_SIZE_MB} MB and was skipped.`);
           continue;
         }
         try {
@@ -648,9 +656,19 @@ export default function Upload({ onNavigate, idToken = "", isFreeUser = false }:
     const { file } = item;
     const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
     const isLarge = file.size > SPLIT_THRESHOLD_MB * 1024 * 1024;
+    const isSplittable = isPdf && isLarge;
 
-    if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+    // Non-PDFs (JPG/PNG) can't be split, so they're capped at MAX_FILE_SIZE_MB. PDFs over
+    // the split threshold get a much higher ceiling instead -- they're auto-split into
+    // <=50-page chunks below, so MAX_FILE_SIZE_MB was never a real constraint for them, just
+    // an accidental one. MAX_SPLITTABLE_PDF_MB is a browser-memory safety net (pdf-lib holds
+    // the whole file in memory once to split it), not a real product limit.
+    if (!isSplittable && file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
       updateItem(item.id, { status: "error", error: `File exceeds ${MAX_FILE_SIZE_MB} MB limit.` });
+      return;
+    }
+    if (isSplittable && file.size > MAX_SPLITTABLE_PDF_MB * 1024 * 1024) {
+      updateItem(item.id, { status: "error", error: `PDF exceeds the ${MAX_SPLITTABLE_PDF_MB} MB auto-split limit.` });
       return;
     }
 
@@ -888,7 +906,7 @@ export default function Upload({ onNavigate, idToken = "", isFreeUser = false }:
                 Drop PDFs or a ZIP file here or <span className="text-blue-600 underline underline-offset-2">click to browse</span>
               </p>
               <p className="text-xs text-slate-400 mt-1">
-                PDF, JPG, PNG, ZIP — Max {MAX_FILE_SIZE_MB} MB
+                PDF, JPG, PNG, ZIP — Images max {MAX_FILE_SIZE_MB} MB, PDFs auto-split up to {MAX_SPLITTABLE_PDF_MB} MB
               </p>
             </>
           )}
