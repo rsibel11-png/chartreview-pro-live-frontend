@@ -1,3 +1,4 @@
+// Updated: 2026-09-22 -- Removed the dead REACT_APP_AWS_API_KEY / x-api-key header. It was never real AWS credentials (wrong format), and every backend handler stopped checking it on 2026-09-19 in favor of real Cognito JWT verification -- it was just an inert string being shipped in the JS bundle for no reason.
 // PagePaymentDialog.tsx — chartreview-pro-live-frontend
 // Updated: 2026-09-21 — New-user signup grant is 1000 free pages now (was 100). Relabeled
 //   the credits-breakdown tile from "Free Monthly" to "Free Pages" -- it was never actually
@@ -22,7 +23,6 @@ import { Loader2, CreditCard, FileText, CheckCircle, AlertCircle, Info } from "l
 
 // ── Env vars (CRA) ────────────────────────────────────────────────────────────
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || "";
-const API_KEY = process.env.REACT_APP_AWS_API_KEY || "";
 const ORG_ID = process.env.REACT_APP_ORG_ID || "";
 
 // ── Tiered pricing (matches backend) ──────────────────────────────────────────
@@ -52,7 +52,6 @@ async function stripeApi(path: string, method: string = "GET", data?: any, idTok
     method,
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": API_KEY,
       "Authorization": `Bearer ${idToken || ""}`,
       "x-org-id": ORG_ID,
     },
