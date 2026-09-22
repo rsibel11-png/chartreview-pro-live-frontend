@@ -7,6 +7,14 @@
 // completed summary now deducts again via PagePaymentDialog (variant='rerun') + POST
 // /stripe/deduct, mirroring Upload.tsx's payment gate exactly. Free/admin users bypass,
 // same as upload. Brand-new documents in the same batch are still free, as intended.
+// Updated: 2026-09-21 — The "generating" banner now shows a single generic label
+//   ("Processing summary...") instead of the raw backend status_msg (which named
+//   internal pipeline stages like "Building encounter checklist" / "Launching N
+//   parallel workers" / "Merging and deduplicating visits"). The real status_msg is
+//   still fetched and still drives progressPercent via estimateProgressFromStatus()
+//   unchanged -- only the user-visible text changed, so the percent bar keeps moving
+//   exactly as before. Backend untouched; status_msg is unchanged there too (still
+//   useful for debugging via DynamoDB).
 // Updated: 2026-09-21 — Replaced the "generating" banner's counting-up mm:ss
 // timer with a percent-complete status bar (matches Upload.tsx's Progress look).
 // Frontend-only: the backend job status is still free text (no numeric percent
@@ -1456,7 +1464,7 @@ const normalizePTSetting = (setting: string): string => {
           <Loader2 className="w-5 h-5 text-blue-600 animate-spin flex-shrink-0" />
           <div className="flex-1">
             <div className="flex items-center justify-between gap-3 mb-1.5">
-              <p className="text-sm font-medium text-blue-800">{statusMsg || "Generating..."}</p>
+              <p className="text-sm font-medium text-blue-800">{generatingSummary ? "Processing summary..." : (statusMsg || "Generating...")}</p>
               <span className="text-sm font-mono text-blue-600 shrink-0">{progressPercent}%</span>
             </div>
             <Progress value={progressPercent} className="h-1.5" />
