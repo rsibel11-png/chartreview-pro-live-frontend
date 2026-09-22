@@ -1,4 +1,11 @@
 // Upload.tsx — chartreview-pro-live-frontend
+// Updated: 2026-09-21 — Fixed the one caveat left from the wait-for-processed change: the
+//   status bar used to vanish if you navigated to Library/Summaries and back mid-upload,
+//   because plain useState() resets when React unmounts/remounts a component, even though
+//   the background upload work itself kept running underneath the whole time. Moved
+//   fileItems/uploading/allDone into a small module-level store (see _uploadStore below)
+//   that survives Upload unmounting -- the component just subscribes to it, so navigating
+//   away and back now shows the real, still-accurate progress instead of an empty list.
 // Updated: 2026-09-21 — "Upload complete" now waits for backend processing too. Previously
 //   a file was marked "completed" as soon as POST /process (SQS enqueue) succeeded -- the
 //   Library still showed it mid-processing (Textract + relevance assess) for a while after.
@@ -540,13 +547,47 @@ const FileRow = React.memo(({ file, onRemove, onRetry }: { file: any; onRemove: 
   );
 });
 
+// ── Persisted upload-progress store ──────────────────────────────────────────
+// This app is a single-page, state-swap SPA (App.tsx swaps which page component
+// renders -- no real route change or page reload). Background upload work
+// (uploadFile(), waitForProcessed() polling) is NOT tied to whether the Upload
+// component is mounted -- it keeps running in the JS module even after the user
+// navigates to Library/Summaries. Plain useState() IS tied to the component
+// instance though: navigating away and back used to remount Upload with empty
+// state, so the status bar/progress list vanished even though uploads were still
+// happening underneath. This module-level store is the persistent source of
+// truth for the three pieces of state the status bar depends on -- writes always
+// land here (so they're never lost while unmounted), and the component just
+// subscribes to re-render whenever it changes.
+let _uploadStore = { fileItems: [] as any[], uploading: false, allDone: false };
+const _uploadStoreListeners = new Set<() => void>();
+
+function setUploadStore(patch: Partial<typeof _uploadStore>) {
+  _uploadStore = { ..._uploadStore, ...patch };
+  _uploadStoreListeners.forEach((listener) => listener());
+}
+function subscribeUploadStore(listener: () => void) {
+  _uploadStoreListeners.add(listener);
+  return () => { _uploadStoreListeners.delete(listener); };
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 export default function Upload({ onNavigate, idToken = "", isFreeUser = false }: { onNavigate?: (page: string) => void; idToken?: string; isFreeUser?: boolean }) {
   // Sync idToken into module-level var so helper functions can access it
   React.useEffect(() => { _idToken = idToken; }, [idToken]);
 
   const inputRef = useRef<HTMLInputElement>(null);
-  const [fileItems, setFileItems] = useState<any[]>([]);
+
+  // Subscribe to the persisted upload store (defined above) so this component
+  // re-renders whenever it changes -- including when background work (uploadFile,
+  // waitForProcessed polling) updates it while Upload isn't the page on screen.
+  const [, forceStoreRender] = useState(0);
+  useEffect(() => subscribeUploadStore(() => forceStoreRender((n) => n + 1)), []);
+  const fileItems = _uploadStore.fileItems;
+  const setFileItems = (updater: any) => {
+    const next = typeof updater === "function" ? updater(_uploadStore.fileItems) : updater;
+    setUploadStore({ fileItems: next });
+  };
 
   // Read split bridge on mount — if user clicked "Send to Upload" from SplitPdf
   useEffect(() => {
@@ -566,9 +607,11 @@ export default function Upload({ onNavigate, idToken = "", isFreeUser = false }:
   }, []);
   const [dragActive, setDragActive] = useState(false);
   const [folder, setFolder] = useState("");
-  const [uploading, setUploading] = useState(false);
+  const uploading = _uploadStore.uploading;
+  const setUploading = (value: boolean) => setUploadStore({ uploading: value });
   const [globalError, setGlobalError] = useState<string | null>(null);
-  const [allDone, setAllDone] = useState(false);
+  const allDone = _uploadStore.allDone;
+  const setAllDone = (value: boolean) => setUploadStore({ allDone: value });
 
   // ── Payment dialog state ────────────────────────────────────────────────────
   const [showPaymentDialog, setShowPaymentDialog] = useState(false);
