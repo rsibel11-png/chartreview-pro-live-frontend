@@ -1,3 +1,4 @@
+// Updated: 2026-09-22 -- Removed the dead REACT_APP_AWS_API_KEY / x-api-key header. It was never real AWS credentials (wrong format), and every backend handler stopped checking it on 2026-09-19 in favor of real Cognito JWT verification -- it was just an inert string being shipped in the JS bundle for no reason.
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // VisitIndex.tsx — chartreview-native-frontend
 // Ported: 2026-05-03 — CRA/TypeScript
@@ -9,7 +10,6 @@ import React, { useState, useEffect } from "react";
 // ── Env vars ──────────────────────────────────────────────────────────────────
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || "";
 const ORG_ID      = process.env.REACT_APP_ORG_ID      || "";
-const API_KEY     = process.env.REACT_APP_AWS_API_KEY  || "";
 
 declare global {
   interface Window { docx: any; }
@@ -53,7 +53,7 @@ export default function VisitIndex({ onNavigate, idToken }: { onNavigate?: (page
   const awsProxy = async (path: string, method = "GET", data?: any): Promise<any> => {
     const opts: any = {
       method,
-      headers: { "Content-Type": "application/json", "x-api-key": API_KEY, "Authorization": `Bearer ${idToken || ""}`, "x-org-id": ORG_ID },
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken || ""}`, "x-org-id": ORG_ID },
     };
     if (data !== undefined) opts.body = JSON.stringify(data);
     const res = await fetch(`${AWS_API_URL}${path}`, opts);
@@ -82,7 +82,7 @@ export default function VisitIndex({ onNavigate, idToken }: { onNavigate?: (page
             ? `${AWS_API_URL}/documents?last_key=${encodeURIComponent(JSON.stringify(lastKey))}`
             : `${AWS_API_URL}/documents`;
           const res = await fetch(url, {
-            headers: { "Authorization": `Bearer ${idToken || ""}`, "x-api-key": API_KEY, "x-org-id": ORG_ID },
+            headers: { "Authorization": `Bearer ${idToken || ""}`, "x-org-id": ORG_ID },
           });
           const data = await res.json();
           allDocs = allDocs.concat(data.documents || []);
