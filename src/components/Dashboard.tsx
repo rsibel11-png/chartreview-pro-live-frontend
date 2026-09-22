@@ -1,3 +1,4 @@
+// Updated: 2026-09-22 -- Removed the dead REACT_APP_AWS_API_KEY / x-api-key header. It was never real AWS credentials (wrong format), and every backend handler stopped checking it on 2026-09-19 in favor of real Cognito JWT verification -- it was just an inert string being shipped in the JS bundle for no reason.
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // Dashboard.tsx — chartreview-native-frontend
 // Updated: 2026-05-10 — add x-api-key header to all fetch calls
@@ -11,7 +12,6 @@ import {
 // ── Env vars ──────────────────────────────────────────────────────────────────
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || "";
 const ORG_ID      = process.env.REACT_APP_ORG_ID      || "";
-const API_KEY     = process.env.REACT_APP_AWS_API_KEY  || "";
 
 // ── Inline UI primitives ──────────────────────────────────────────────────────
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
@@ -65,7 +65,7 @@ export default function Dashboard({ onNavigate, idToken }: { onNavigate?: (page:
             ? `${AWS_API_URL}/documents?last_key=${encodeURIComponent(JSON.stringify(lastKey))}`
             : `${AWS_API_URL}/documents`;
           const res = await fetch(url, {
-            headers: { "Authorization": `Bearer ${idToken || ""}`, "x-api-key": API_KEY, "x-org-id": ORG_ID },
+            headers: { "Authorization": `Bearer ${idToken || ""}`, "x-org-id": ORG_ID },
           });
           if (!res.ok) throw new Error(`Failed to load documents: ${res.status}`);
           const data = await res.json();
