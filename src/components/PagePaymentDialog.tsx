@@ -1,4 +1,10 @@
 // PagePaymentDialog.tsx — chartreview-pro-live-frontend
+// Updated: 2026-09-21 — Pay-exact-page-count (no bundle) purchases now cost a flat
+//   $0.15/page via Stripe card checkout, instead of the tiered bundle rate (which used
+//   to give the Starter $0.10/page rate to someone buying only e.g. 40 pages, same as a
+//   1,000-page bundle -- no incentive to bundle). Bundle pricing/tiers are unchanged;
+//   this only raises the price for skipping a bundle. Credit deduction (page-for-page,
+//   via /stripe/deduct) is untouched -- this only affects the card-checkout dollar amount.
 // Updated: 2026-09-20 — Added optional variant prop ('upload' default | 'rerun') so the same
 //   credit/Stripe-checkout dialog can be reused to charge for re-running a summary on
 //   documents that already produced a completed one (MedicalSummaries.tsx). Only the
@@ -24,21 +30,10 @@ function getPricePerPage(pages: number): number {
   return 0.05;
 }
 
-function getTierLabel(pages: number): string {
-  if (pages <= 1000) return "Starter (≤1,000 pages)";
-  if (pages <= 5000) return "Pro (1,001–5,000 pages)";
-  if (pages <= 20000) return "Growth (5,001–20,000 pages)";
-  if (pages <= 100000) return "Scale (20,001–100,000 pages)";
-  return "Enterprise (100,001+ pages)";
-}
-
-function getTierColor(pages: number): string {
-  if (pages <= 1000) return "bg-slate-100 text-slate-700";
-  if (pages <= 5000) return "bg-blue-100 text-blue-700";
-  if (pages <= 20000) return "bg-cyan-100 text-cyan-700";
-  if (pages <= 100000) return "bg-green-100 text-green-700";
-  return "bg-emerald-100 text-emerald-700";
-}
+// Flat rate for paying for exactly the pages you need, with no bundle purchase.
+// Deliberately higher than every bundle tier (which starts at $0.10/page) so buying a
+// bundle is always the cheaper option, even for someone who only needs a few pages.
+const EXACT_PAGE_RATE = 0.15;
 
 const BUNDLE_SIZES = [1000, 5000, 20000, 100000, 200000];
 
@@ -108,13 +103,15 @@ export default function PagePaymentDialog({
   const [creditsLoading, setCreditsLoading] = useState(false);
 
   const pages = estimatedPages || 0;
-  const pricePerPage = getPricePerPage(pages);
+  // Base/default rate is the flat pay-as-you-go rate -- what you pay if you buy exactly
+  // the pages you need, no bundle. Selecting a bundle below switches to the tiered rate.
+  const pricePerPage = EXACT_PAGE_RATE;
   const totalCost = Math.round(pages * pricePerPage * 100);
   const totalCostDisplay = `$${(totalCost / 100).toFixed(2)}`;
 
   const bundleOptions = getBundleOptions(pages);
   const payPages = selectedBundle || pages;
-  const payPricePerPage = getPricePerPage(payPages);
+  const payPricePerPage = selectedBundle ? getPricePerPage(selectedBundle) : EXACT_PAGE_RATE;
   const payCost = selectedBundle
     ? Math.round(selectedBundle * payPricePerPage * 100)
     : totalCost;
@@ -276,9 +273,9 @@ export default function PagePaymentDialog({
               <span className="text-2xl font-bold text-slate-900">{pages.toLocaleString()}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-slate-600 font-medium">Pricing tier</span>
-              <span className={`text-xs font-semibold px-2 py-1 rounded-full ${getTierColor(pages)}`}>
-                {getTierLabel(pages)}
+              <span className="text-slate-600 font-medium">Pricing</span>
+              <span className="text-xs font-semibold px-2 py-1 rounded-full bg-amber-100 text-amber-700">
+                Pay-as-you-go (no bundle)
               </span>
             </div>
             <div className="flex items-center justify-between">
