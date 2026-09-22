@@ -1,3 +1,4 @@
+// Updated: 2026-09-22 -- Removed the dead REACT_APP_AWS_API_KEY / x-api-key header. It was never real AWS credentials (wrong format), and every backend handler stopped checking it on 2026-09-19 in favor of real Cognito JWT verification -- it was just an inert string being shipped in the JS bundle for no reason.
 // Settings.tsx — chartreview-native-frontend
 // Updated: 2026-08-30 — Fix bottom boundary scan: scan midpoint-downward instead of bottom-upward to find footer band START (not bottom border line)
 // Updated: 2026-08-30 — Add diagnostic logging to letterhead margin detection
@@ -24,7 +25,6 @@ import {
 
 // ── Env vars ──────────────────────────────────────────────────────────────────
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || '';
-const AWS_API_KEY = process.env.REACT_APP_AWS_API_KEY || '';
 const ORG_ID      = process.env.REACT_APP_ORG_ID      || '';
 
 // ── LocalStorage keys ─────────────────────────────────────────────────────────
@@ -410,7 +410,7 @@ export default function Settings({ onNavigate, idToken }: { onNavigate?: (p: str
 
       // Try S3 upload of the original file
       const res = await fetch(`${AWS_API_URL}/get-upload-url?filename=${encodeURIComponent(file.name)}&contentType=${encodeURIComponent(file.type)}&orgId=${ORG_ID}&purpose=letterhead`, {
-        headers: { 'x-api-key': AWS_API_KEY, 'x-org-id': ORG_ID },
+        headers: { 'x-org-id': ORG_ID },
       });
       if (res.ok) {
         const { upload_url, file_url } = await res.json();
