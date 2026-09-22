@@ -1,3 +1,4 @@
+// Updated: 2026-09-22 -- Removed the dead REACT_APP_AWS_API_KEY / x-api-key header. It was never real AWS credentials (wrong format), and every backend handler stopped checking it on 2026-09-19 in favor of real Cognito JWT verification -- it was just an inert string being shipped in the JS bundle for no reason.
 /**
  * Library.tsx -- Standalone AWS version (no Base44 dependency)
  * Based on Library.jsx v54 - 2026-05-03
@@ -44,7 +45,6 @@ import {
 
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || "";
 const ORG_ID      = process.env.REACT_APP_ORG_ID      || "";
-const API_KEY     = process.env.REACT_APP_AWS_API_KEY  || "";
 
 // ── Inline shadcn-style primitives (no @/components/ui dependency) ──────────
 const Card = ({ className = "", children, ...p }: any) => (
@@ -228,7 +228,6 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
       method,
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": API_KEY,
         "Authorization": `Bearer ${idToken || ""}`,
         "x-org-id": ORG_ID,
       },
@@ -355,7 +354,6 @@ export default function Library({ onNavigate, idToken }: { onNavigate?: (page: s
       const res = await fetch(`${AWS_API_URL}/documents`, {
         method: "GET",
         headers: {
-          "x-api-key": API_KEY,
           "Authorization": `Bearer ${idToken || ""}`,
           "x-org-id": ORG_ID,
         },
