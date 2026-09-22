@@ -1,4 +1,13 @@
 // Upload.tsx — chartreview-pro-live-frontend
+// Updated: 2026-09-21 — "Upload complete" now waits for backend processing too. Previously
+//   a file was marked "completed" as soon as POST /process (SQS enqueue) succeeded -- the
+//   Library still showed it mid-processing (Textract + relevance assess) for a while after.
+//   Added waitForProcessed(), which polls GET /documents/{id} until status is "processed" or
+//   "failed" before the file is marked done, so from the user's point of view the whole
+//   pipeline (upload + processing) happens inside the Upload step. Falls back to a
+//   "still processing" state after ~16 min (past the backend worker's own 900s timeout) so a
+//   stuck/huge document can't hang the Upload button forever. No backend change needed --
+//   GET /documents/{id} already returns status.
 // Updated: 2026-09-21 — Removed the 100MB ceiling as the real blocker for large files: PDFs
 //   over SPLIT_THRESHOLD_MB now bypass MAX_FILE_SIZE_MB and go straight to the existing
 //   auto-split path (up to MAX_SPLITTABLE_PDF_MB, a browser-memory safety net, not a real
@@ -318,6 +327,31 @@ function enqueueProcess(docId: string): Promise<any> {
   });
 }
 
+// ── Wait for backend processing (Textract + relevance assess) to finish ──────
+// enqueueProcess() only confirms the backend job was *queued* (SQS accepted the message) --
+// it does NOT mean the document is actually usable in the Library yet. Poll the document
+// record until status reaches a terminal value so the UI never claims "Complete" before
+// processing has really finished. The backend worker Lambda has a 900s timeout, so poll
+// comfortably past that (~16 min) before giving up and falling back to a "still processing"
+// state instead of hanging the Upload button forever.
+async function waitForProcessed(docId: string): Promise<{ ok: boolean; timedOut?: boolean }> {
+  const POLL_INTERVAL_MS = 5000;
+  const MAX_ATTEMPTS = 192; // ~16 minutes
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
+    try {
+      const doc = await awsProxy(`/documents/${docId}`);
+      if (doc.status === "processed") return { ok: true };
+      if (doc.status === "failed") return { ok: false };
+      // still "processing" (or "uploaded" briefly) -- keep polling
+    } catch {
+      // transient network/API blip -- awsProxy already retries internally; just keep
+      // polling on the next tick instead of failing the whole item over one bad request.
+    }
+  }
+  return { ok: false, timedOut: true };
+}
+
 // ── Client-side ZIP extraction ────────────────────────────────────────────────
 // JSZip has no native ESM build, so (unlike pdf-lib below) we load it through esm.sh,
 // which transforms the npm package into real ESM on the fly -- verified the served
@@ -445,6 +479,8 @@ const FileRow = React.memo(({ file, onRemove, onRetry }: { file: any; onRemove: 
     uploading: "text-blue-600",
     splitting: "text-blue-600",
     processing: "text-blue-600",
+    finalizing: "text-blue-600",
+    background: "text-amber-600",
     completed: "text-green-600",
     error: "text-red-600",
   }[file.status] || "text-slate-500";
@@ -454,6 +490,8 @@ const FileRow = React.memo(({ file, onRemove, onRetry }: { file: any; onRemove: 
     uploading: `Uploading… ${file.progress || 0}%`,
     splitting: `Uploading… ${file.progress || 0}%`,
     processing: `Uploading… ${file.progress || 0}%`,
+    finalizing: `Finishing up… ${file.progress || 0}%`,
+    background: "Still processing — check Library shortly",
     completed: "Complete",
     error: file.error || "Error",
   }[file.status] || file.status;
@@ -462,13 +500,14 @@ const FileRow = React.memo(({ file, onRemove, onRetry }: { file: any; onRemove: 
     <div className={`flex items-center gap-3 p-3 rounded-lg border ${
       file.status === "completed" ? "bg-green-50 border-green-200"
       : file.status === "error" ? "bg-red-50 border-red-200"
+      : file.status === "background" ? "bg-amber-50 border-amber-200"
       : "bg-white border-slate-200"
     }`}>
       <FileText className="w-5 h-5 text-slate-400 shrink-0" />
       <div className="flex-1 min-w-0">
         <p className="text-sm font-medium text-slate-900 truncate">{file.name}</p>
         <p className={`text-xs mt-0.5 ${statusColor}`}>{statusLabel}</p>
-        {["uploading", "splitting", "processing"].includes(file.status) && (
+        {["uploading", "splitting", "processing", "finalizing", "background"].includes(file.status) && (
           <Progress value={file.progress || 0} className="h-1 mt-1" />
         )}
       </div>
@@ -493,7 +532,7 @@ const FileRow = React.memo(({ file, onRemove, onRetry }: { file: any; onRemove: 
             </button>
           </div>
         )}
-        {["uploading", "splitting", "processing"].includes(file.status) && (
+        {["uploading", "splitting", "processing", "finalizing", "background"].includes(file.status) && (
           <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
         )}
       </div>
@@ -700,22 +739,57 @@ export default function Upload({ onNavigate, idToken = "", isFreeUser = false }:
         if (!splitData.split || parts.length === 0) {
           updateItem(item.id, { status: "processing", progress: 90 });
           await enqueueProcess(aws_document_id);
-          updateItem(item.id, { status: "completed", progress: 100 });
+          updateItem(item.id, { status: "finalizing", progress: 95 });
+          const singleResult = await waitForProcessed(aws_document_id);
+          if (singleResult.ok) {
+            updateItem(item.id, { status: "completed", progress: 100 });
+          } else if (singleResult.timedOut) {
+            updateItem(item.id, { status: "background", progress: 99 });
+          } else {
+            updateItem(item.id, { status: "error", error: "Processing failed. Please retry or contact support." });
+          }
           return;
         }
 
         updateItem(item.id, { status: "processing", progress: 70 });
         for (let i = 0; i < parts.length; i++) {
           await enqueueProcess(parts[i].aws_document_id);
-          updateItem(item.id, { progress: 70 + Math.round(((i + 1) / parts.length) * 28) });
+          updateItem(item.id, { progress: 70 + Math.round(((i + 1) / parts.length) * 15) });
         }
-        updateItem(item.id, { status: "completed", progress: 100, splitIntoParts: parts.length });
+        updateItem(item.id, { status: "finalizing", progress: 85 });
+        let anyFailed = false;
+        let anyTimedOut = false;
+        let doneParts = 0;
+        await Promise.all(parts.map(async (p: any) => {
+          const partResult = await waitForProcessed(p.aws_document_id);
+          if (!partResult.ok) {
+            if (partResult.timedOut) anyTimedOut = true;
+            else anyFailed = true;
+          }
+          doneParts++;
+          updateItem(item.id, { progress: 85 + Math.round((doneParts / parts.length) * 13) });
+        }));
+        if (anyFailed) {
+          updateItem(item.id, { status: "error", error: "One or more parts failed to process. Check the Library for details.", splitIntoParts: parts.length });
+        } else if (anyTimedOut) {
+          updateItem(item.id, { status: "background", progress: 99, splitIntoParts: parts.length });
+        } else {
+          updateItem(item.id, { status: "completed", progress: 100, splitIntoParts: parts.length });
+        }
         return;
       }
 
       updateItem(item.id, { status: "processing", progress: 92 });
       await enqueueProcess(aws_document_id);
-      updateItem(item.id, { status: "completed", progress: 100 });
+      updateItem(item.id, { status: "finalizing", progress: 95 });
+      const result = await waitForProcessed(aws_document_id);
+      if (result.ok) {
+        updateItem(item.id, { status: "completed", progress: 100 });
+      } else if (result.timedOut) {
+        updateItem(item.id, { status: "background", progress: 99 });
+      } else {
+        updateItem(item.id, { status: "error", error: "Processing failed. Please retry or contact support." });
+      }
     } catch (err: any) {
       let errMsg = err.message || "Upload failed";
       if (errMsg.includes("http") || errMsg.includes("X-Amz") || errMsg.length > 120) {
@@ -817,9 +891,10 @@ export default function Upload({ onNavigate, idToken = "", isFreeUser = false }:
     await scanAndShowPayment();
   };
 
-  const pendingCount   = fileItems.filter((f: any) => f.status === "pending").length;
-  const completedCount = fileItems.filter((f: any) => f.status === "completed").length;
-  const errorCount     = fileItems.filter((f: any) => f.status === "error").length;
+  const pendingCount    = fileItems.filter((f: any) => f.status === "pending").length;
+  const completedCount  = fileItems.filter((f: any) => f.status === "completed").length;
+  const errorCount      = fileItems.filter((f: any) => f.status === "error").length;
+  const backgroundCount = fileItems.filter((f: any) => f.status === "background").length;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
@@ -1025,20 +1100,42 @@ export default function Upload({ onNavigate, idToken = "", isFreeUser = false }:
           </Button>
         )}
 
-        {/* All done banner */}
-        {allDone && completedCount > 0 && errorCount === 0 && (
+        {/* All done banner -- only shows once files have actually finished processing,
+            not just once bytes were uploaded */}
+        {allDone && completedCount > 0 && errorCount === 0 && backgroundCount === 0 && (
           <div className="flex items-center gap-3 bg-green-50 border border-green-200 rounded-xl px-4 py-3">
             <CheckCircle className="w-5 h-5 text-green-600 shrink-0" />
             <div className="flex-1">
               <p className="text-sm font-semibold text-green-700">
-                {completedCount} file{completedCount !== 1 ? "s" : ""} uploaded successfully
+                {completedCount} file{completedCount !== 1 ? "s" : ""} ready in the Library
               </p>
               <p className="text-xs text-slate-500">
-                Documents are processing in the background — check the Library in a few minutes.
+                Upload and processing are both complete.
               </p>
             </div>
             <Button size="sm" variant="outline" onClick={() => onNavigate?.("Library")}
               className="border-green-300 text-green-700 hover:bg-green-100">
+              View Library
+            </Button>
+          </div>
+        )}
+
+        {/* Rare fallback: a file exceeded ~16 min of processing (past the backend worker's
+            own timeout) -- don't hang the Upload button forever, but don't call it "Complete"
+            either. Only shown for the file(s) actually affected. */}
+        {allDone && backgroundCount > 0 && (
+          <div className="flex items-center gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+            <Loader2 className="w-5 h-5 text-amber-600 shrink-0 animate-spin" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-amber-700">
+                Still processing {backgroundCount} file{backgroundCount !== 1 ? "s" : ""}
+              </p>
+              <p className="text-xs text-slate-500">
+                This is taking longer than usual — check the Library in a few minutes.
+              </p>
+            </div>
+            <Button size="sm" variant="outline" onClick={() => onNavigate?.("Library")}
+              className="border-amber-300 text-amber-700 hover:bg-amber-100">
               View Library
             </Button>
           </div>
