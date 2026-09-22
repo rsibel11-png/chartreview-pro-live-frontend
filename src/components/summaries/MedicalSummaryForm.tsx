@@ -1,4 +1,12 @@
 // MedicalSummaryForm.tsx
+// Updated: 2026-09-21 — Added a visit sort toggle (Chronological / Provider / Facility) next
+// to "Office Visits (N)". Persisted on the summary as visit_sort_mode (see summaries.js
+// whitelist) so MedicalSummaries.tsx's Word export can mirror the same order + group
+// headers. Display-only reorder: getVisitDisplayOrder() returns original array indices in
+// the chosen order -- formData.visits itself (storage order, chronological insert logic in
+// placeNewVisit/placeVisitAtIndex) is untouched, so nothing else in this file changes
+// meaning. Only the "Visit N" label numbers by render position now; every data
+// read/write inside the loop still uses the real original index.
 // Updated: 2026-08-30 — Ported MacroPicker from original Base44 app, wired into IME/Chart Review/Pre-Visit/Physical Exam fields
 // Updated: 2026-07-22 — sync visit_count to visits.length on every save so library card stays accurate after PT/OT consolidation (keep first & last per facility) — chartreview-native-frontend
 // Ported: 2026-05-03 — CRA/TypeScript, all shadcn/ui inlined, DuplicateVisitDetector/PTConsolidationHelper stripped
@@ -34,6 +42,29 @@ function isPtOtVisit(visit: any): boolean {
   if (/\b(PT|PTA|DPT|OT|COTA|CLT)\b/i.test(provider) && !/\b(MD|DO|PA|NP|FNP|APRN|DC|DMD|DPM)\b/i.test(provider)) return true;
   if (/\btherapy\b|\brehabilitation\b/.test(setting) && !/pain management|spine|orthopedic|medical center|hospital/.test(setting)) return true;
   return false;
+}
+
+// Added 2026-09-21 -- returns original array indices of `visits` in the chosen display
+// order. 'date' (default) returns identity order: visits are already maintained
+// chronologically by placeNewVisit/placeVisitAtIndex, so no behavior change for existing
+// summaries. 'provider'/'facility' group by that field (case-insensitive, empty values sort
+// last), tie-broken chronologically within a group, then by original index for determinism.
+function getVisitDisplayOrder(visits: any[], mode: string): number[] {
+  const order = (visits || []).map((_: any, i: number) => i);
+  if (mode !== 'provider' && mode !== 'facility') return order;
+  const field = mode === 'provider' ? 'rendering_provider' : 'practice_setting';
+  return order.sort((a: number, b: number) => {
+    const ka = ((visits[a] || {})[field] || '').trim().toLowerCase();
+    const kb = ((visits[b] || {})[field] || '').trim().toLowerCase();
+    if (!ka && !kb) return a - b;
+    if (!ka) return 1;
+    if (!kb) return -1;
+    if (ka !== kb) return ka.localeCompare(kb);
+    const da = (visits[a] || {}).visit_date || '';
+    const db = (visits[b] || {}).visit_date || '';
+    if (da !== db) return da.localeCompare(db);
+    return a - b;
+  });
 }
 
 function normFacility(f: string): string {
@@ -554,8 +585,10 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken, 
   // with the visit relocated to its correct chronological slot (dated visits sorted
   // ascending; visits with no date yet stay at the bottom, in their current relative
   // order). Used to place a manually-added visit once the user is done editing it —
-  // "Visit N" numbers are derived from array position (see the Visit {index+1}
-  // header below), so relocating it automatically renumbers everything after it.
+  // "Visit N" numbers are derived from position in this storage array when sort mode is
+  // 'date' (see getVisitDisplayOrder -- identity order), so relocating it automatically
+  // renumbers everything after it in that view. Provider/facility sort only changes DISPLAY
+  // order (Visit {renderPos+1} below); this array's storage order is untouched either way.
   // Other visits are left exactly as they are; only the target visit moves.
   const placeVisitAtIndex = (visits: any[], index: number): { nextVisits: any[]; newIndex: number } => {
     const visit = visits[index];
@@ -873,11 +906,18 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken, 
 
           {/* Visits */}
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-2">
               <h3 className="text-xl font-bold text-slate-900">
                 Office Visits ({formData.visits?.length || 0})
               </h3>
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2">
+                <Label className="text-sm font-medium text-slate-600 whitespace-nowrap">Sort by</Label>
+                <Select value={formData.visit_sort_mode || 'date'}
+                  onValueChange={(value: string) => setFormData((prev: any) => ({ ...prev, visit_sort_mode: value }))}>
+                  <SelectOption value="date">Chronological</SelectOption>
+                  <SelectOption value="provider">Provider</SelectOption>
+                  <SelectOption value="facility">Facility</SelectOption>
+                </Select>
                 <Button onClick={() => setShowPtConsolidate(!showPtConsolidate)} size="sm" variant="outline">
                   Consolidate PT/OT
                 </Button>
@@ -897,7 +937,9 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken, 
               />
             )}
 
-            {(formData.visits || []).map((visit: any, index: number) => {
+            {getVisitDisplayOrder(formData.visits || [], formData.visit_sort_mode || 'date').map((originalIndex: number, renderPos: number) => {
+              const index = originalIndex; // real array index -- every read/write below stays unchanged
+              const visit = (formData.visits || [])[index];
               const isExpanded = expandedVisit === index;
               return (
                 <div key={index} ref={(el: HTMLDivElement | null) => { visitCardRefs.current[index] = el; }}>
@@ -906,7 +948,7 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken, 
                     onClick={() => setExpandedVisit(isExpanded ? -1 : index)}>
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-lg">
-                        Visit {index + 1}
+                        Visit {renderPos + 1}
                         {visit.visit_date && ` — ${new Date(visit.visit_date + 'T00:00:00').toLocaleDateString()}`}
                         {visit.rendering_provider && ` — ${visit.rendering_provider}`}
                       </CardTitle>
