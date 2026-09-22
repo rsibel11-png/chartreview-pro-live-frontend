@@ -995,6 +995,13 @@ const normalizePTSetting = (setting: string): string => {
   };
 
   // ── Export to Word ─────────────────────────────────────────────────────────
+  // Updated: 2026-09-21 — Export now mirrors the Edit Summary visit-list sort choice
+  // (visit_sort_mode, set in MedicalSummaryForm.tsx, persisted via summaries.js). When set
+  // to 'provider' or 'facility', finalVisits is regrouped by that field (chronological
+  // within each group) and a left-justified "Provider: ..."/"Facility: ..." header
+  // paragraph is inserted before each new group as the loop below builds sections_content.
+  // 'date' (default) is unchanged -- identity order, no header paragraphs, matches every
+  // existing exported summary.
   // Updated: 2026-08-30 — Replaced window.confirm with an in-app dialog offering a format dropdown
   // (Letterhead vs Plain Word Document). If no letterhead is configured, skip the dialog and export plain.
   const handleExportClick = (summary: any) => {
@@ -1063,7 +1070,24 @@ const normalizePTSetting = (setting: string): string => {
     // Updated: 2026-05-13 — sanitize at export time so old saved records also get cleaned
     const patientNameForSanitize: string = (freshSummary.patient_name || '') as string;
     const sanitizedForExport: any[] = sanitizeVisits(sorted, patientNameForSanitize);
-    const finalVisits = buildVisitList(backfillC4Providers(deduplicateVisits(sanitizedForExport)), false); // PT consolidation disabled — show all visits
+    const visitSortMode: string = (freshSummary.visit_sort_mode || 'date') as string;
+    // Regroups by provider/facility (case-insensitive, empty last), chronological within each
+    // group (Array.prototype.sort is stable, so ties keep the incoming chronological order).
+    const reorderForExport = (visits: any[], mode: string): any[] => {
+      if (mode !== 'provider' && mode !== 'facility') return visits;
+      const field = mode === 'provider' ? 'rendering_provider' : 'practice_setting';
+      return [...visits].sort((a: any, b: any) => {
+        if (a._ptBridge || b._ptBridge) return 0; // PT consolidation is disabled below, kept defensive
+        const ka = ((a[field] || '') as string).trim().toLowerCase();
+        const kb = ((b[field] || '') as string).trim().toLowerCase();
+        if (!ka && !kb) return 0;
+        if (!ka) return 1;
+        if (!kb) return -1;
+        if (ka !== kb) return ka.localeCompare(kb);
+        return visitSortComparator(a, b);
+      });
+    };
+    const finalVisits = reorderForExport(buildVisitList(backfillC4Providers(deduplicateVisits(sanitizedForExport)), false), visitSortMode); // PT consolidation disabled — show all visits
     const patientName = (freshSummary.patient_name || 'Patient') as string;
     const caseNumber  = (freshSummary.case_number  || '')         as string;
     const imeNote         = (freshSummary.ime_note          || '') as string;
@@ -1076,6 +1100,7 @@ const normalizePTSetting = (setting: string): string => {
     const SIZE     = ptToHalfPt(prefs.fontSize);
     const SIZE_SM  = ptToHalfPt(Math.max(8, prefs.fontSize - 2));
     const SIZE_TTL = ptToHalfPt(16);
+    const SIZE_GRP = ptToHalfPt(13); // provider/facility group header, between body text and section titles
     const DATE_INDENT = 1540;
 
     const boldRun   = (text: string, size?: number) => new TextRun({ text: String(text || ''), bold: true,  font: FONT, size: size || SIZE });
@@ -1175,7 +1200,23 @@ const normalizePTSetting = (setting: string): string => {
       sections_content.push(new Paragraph({ children: [normalRun(chartReviewNote)], spacing: { after: 200 } }));
     }
 
+    const groupField = visitSortMode === 'provider' ? 'rendering_provider' : 'practice_setting';
+    const groupLabel = visitSortMode === 'provider' ? 'Provider' : 'Facility';
+    let lastGroupKey: string | null = null;
     for (const visit of finalVisits) {
+      if ((visitSortMode === 'provider' || visitSortMode === 'facility') && !visit._ptBridge) {
+        const rawGroupVal = ((visit[groupField] || '') as string).trim();
+        const groupKey = rawGroupVal.toLowerCase();
+        if (groupKey !== lastGroupKey) {
+          lastGroupKey = groupKey;
+          sections_content.push(new Paragraph({
+            alignment: AlignmentType.LEFT,
+            spacing: { before: 240, after: 100 },
+            border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: '999999' } },
+            children: [boldRun(`${groupLabel}: ${rawGroupVal || 'Unknown'}`, SIZE_GRP)],
+          }));
+        }
+      }
       if (visit._ptBridge) {
         sections_content.push(new Paragraph({
           indent: { left: DATE_INDENT }, spacing: { before: 80, after: 80 },
