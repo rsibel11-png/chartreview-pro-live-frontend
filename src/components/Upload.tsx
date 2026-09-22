@@ -1,3 +1,4 @@
+// Updated: 2026-09-22 -- Removed the dead REACT_APP_AWS_API_KEY / x-api-key header. It was never real AWS credentials (wrong format), and every backend handler stopped checking it on 2026-09-19 in favor of real Cognito JWT verification -- it was just an inert string being shipped in the JS bundle for no reason.
 // Upload.tsx — chartreview-pro-live-frontend
 // Updated: 2026-09-21 — Fixed the one caveat left from the wait-for-processed change: the
 //   status bar used to vanish if you navigated to Library/Summaries and back mid-upload,
@@ -41,7 +42,6 @@ import { _splitBridge } from "./SplitPdf";
 // ── Env vars (CRA) ────────────────────────────────────────────────────────────
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || "";
 const ORG_ID      = process.env.REACT_APP_ORG_ID      || "";
-const API_KEY     = process.env.REACT_APP_AWS_API_KEY  || "";
 let _idToken = "";
 
 const MAX_FILE_SIZE_MB       = 100; // hard cap for non-PDFs (JPG/PNG can't be split)
@@ -204,7 +204,6 @@ async function getUploadUrl(payload: any, retries = 3): Promise<any> {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": API_KEY,
         "Authorization": `Bearer ${_idToken}`,
         "x-org-id": ORG_ID,
       },
@@ -244,7 +243,6 @@ async function awsProxy(path: string, method = "GET", data?: any, retries = 4): 
       method,
       headers: {
         "Content-Type": "application/json",
-        "x-api-key": API_KEY,
         "Authorization": `Bearer ${_idToken}`,
         "x-org-id": ORG_ID,
       },
@@ -266,7 +264,6 @@ async function stripeApiCall(path: string, method: string = "GET", data?: any): 
     method,
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": API_KEY,
       "Authorization": `Bearer ${_idToken}`,
       "x-org-id": ORG_ID,
     },
