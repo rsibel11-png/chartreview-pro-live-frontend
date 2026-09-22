@@ -1,3 +1,4 @@
+// Updated: 2026-09-22 -- Removed the manual "Remove duplicate visits" button/icon/mutation from the medical summary card. Deduplication already runs automatically after every generateSummary and combine-summaries pass (deduplicateVisits is still called from those flows, untouched) -- this was a redundant manual re-trigger of the same logic.
 /* eslint-disable @typescript-eslint/no-unused-vars */
 // MedicalSummaries.tsx — chartreview-native-frontend
 // Updated: 2026-09-20 (live only) — Generate Summary is gated behind a page-credit
@@ -239,11 +240,6 @@ const Folder = ({ className = "" }) => (
 const Merge = ({ className = "" }) => (
   <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4M4 17H2m0 0l4 4m-4-4l4-4" />
-  </svg>
-);
-const Filter = ({ className = "" }) => (
-  <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4h18M7 12h10M10 20h4" />
   </svg>
 );
 const List = ({ className = "" }) => (
@@ -502,22 +498,6 @@ export default function MedicalSummaries({ onNavigate, idToken, cognitoUser, isF
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["aws-summaries"] });
       setDeleteAllDialog(false);
-    },
-  });
-
-  const deduplicateMutation = useMutation({
-    mutationFn: async (summary: any) => {
-      const deduped = deduplicateVisits(summary.visits);
-      const removed = (summary.visits || []).length - deduped.length;
-      await awsProxy(`/summaries/${summary.aws_summary_id || summary.id}`, "PUT", { visits: deduped });
-      return { removed };
-    },
-    onSuccess: (result: any, summary: any) => {
-      queryClient.invalidateQueries({ queryKey: ["aws-summaries"] });
-      alert(result.removed > 0
-        ? `Merged/removed ${result.removed} duplicate visit(s) from ${summary.patient_name || 'this summary'}.`
-        : `No duplicate visits found in ${summary.patient_name || 'this summary'}.`
-      );
     },
   });
 
@@ -1738,10 +1718,6 @@ const normalizePTSetting = (setting: string): string => {
                     <Button variant="outline" size="sm" className="flex-1" title="Export to Word"
                       onClick={() => handleExportClick(summary)}>
                       <Download className="w-4 h-4" />
-                    </Button>
-                    <Button variant="outline" size="sm" className="flex-1" title="Remove duplicate visits"
-                      onClick={() => deduplicateMutation.mutate(summary)} disabled={deduplicateMutation.isPending}>
-                      <Filter className="w-4 h-4" />
                     </Button>
                   </div>
                   <div className="pt-3 border-t border-slate-200 text-xs text-slate-500">
