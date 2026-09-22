@@ -911,7 +911,7 @@ export default function MedicalSummaryForm({ summary, onClose, onSave, idToken, 
                 Office Visits ({formData.visits?.length || 0})
               </h3>
               <div className="flex items-center gap-2">
-                <Label className="text-sm font-medium text-slate-600 whitespace-nowrap">Sort by</Label>
+                <span className="text-sm font-medium text-slate-600 whitespace-nowrap">Sort by</span>
                 <Select value={formData.visit_sort_mode || 'date'}
                   onValueChange={(value: string) => setFormData((prev: any) => ({ ...prev, visit_sort_mode: value }))}>
                   <SelectOption value="date">Chronological</SelectOption>
