@@ -14,6 +14,17 @@ import { getSessionToken } from "../../api/authSession";
 const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || "https://8nh214t0ai.execute-api.us-east-1.amazonaws.com/dev";
 const ORG_ID      = process.env.REACT_APP_ORG_ID      || "69ceb1ab037acdd4467b31c3";
 
+// ── AI-generated draft watermark (on-screen viewer ONLY) ─────────────────────
+// A single large centered banner over the visible modal -- not a repeating tile.
+// Plain text with a maxWidth lets the browser wrap it naturally, so no word is
+// ever clipped (the earlier SVG-tile version could cut text off at tile edges).
+// This is NOT part of the exported .docx: Export builds its own document from
+// scratch in MedicalSummaries.tsx via the `docx` library (exportToWord()), which
+// never renders this component or reads its styles -- so the watermark can never
+// leak into the file a user downloads. Added 2026-09-24, redone 2026-09-24 per
+// Roman's feedback (single centered banner, not tiled) per Roman's request.
+const AI_WATERMARK_TEXT = 'AI-GENERATED DRAFT SUMMARY. THIS OUTPUT MAY CONTAIN ERRORS, OMISSIONS, OR INACCURACIES. INDEPENDENT REVIEW OF ORIGINAL SOURCE RECORDS IS REQUIRED PRIOR TO RELIANCE OR USE.';
+
 // ── pdf.js loader (same pattern as EmrDetector/Library/Settings preview) ─────
 declare global {
   interface Window {
@@ -316,6 +327,24 @@ export default function SummaryViewer({ summary, onClose, onEdit, onExport, idTo
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="relative z-10 bg-white rounded-xl shadow-xl w-full mx-4 flex flex-col overflow-hidden"
         style={{ maxWidth: activeRecord ? 1600 : 900, maxHeight: '90vh', height: activeRecord ? '90vh' : undefined }}>
+
+        {/* AI-generated draft watermark — single centered banner, on-screen viewer ONLY (see const above) */}
+        <div aria-hidden="true" className="absolute inset-0 z-30 flex items-center justify-center pointer-events-none overflow-hidden select-none">
+          <div style={{
+            transform: 'rotate(-28deg)',
+            color: 'rgba(185,28,28,0.18)',
+            fontFamily: 'Arial, sans-serif',
+            fontWeight: 700,
+            fontSize: '20px',
+            lineHeight: 1.5,
+            textAlign: 'center',
+            letterSpacing: '0.3px',
+            maxWidth: '460px',
+            whiteSpace: 'normal',
+          }}>
+            {AI_WATERMARK_TEXT}
+          </div>
+        </div>
 
         {/* Header */}
         <div className="bg-white border-b border-slate-200 px-6 py-4 shrink-0">

@@ -1,10 +1,16 @@
 // termsOfService.ts — chartreview-pro-live-frontend
-// Updated: 2026-09-24 — Added Section 4 disclaimers: no expert opinions/causation/disability/
-// impairment/life-care/standard-of-care conclusions, no guarantee that every page/provider/
-// diagnosis/event/date in source materials will appear in the Output, and an OCR-limitations
-// disclaimer (handwritten/faded/redacted/poorly-scanned/rotated/obscured documents). Bumped
-// TOS_VERSION to 2026-09-24-v1 since TOS_SECTIONS changed (see prior header note on why).
-// Roman requested this addition 2026-09-24; text closely follows his own wording.
+// Updated: 2026-09-24 (v2) — Added six new sections drawn from Roman's expanded draft
+// (CHARTREVIEWPRO.docx): "No Legal, Medical, or Expert Advice; Not a Medical Device",
+// "Source Material and Data Completeness Disclaimer", "Litigation and Evidentiary
+// Disclaimer", "Security", "Data Retention", and "Third-Party Service Providers". Also
+// added one more Section 4 bullet: users may not represent that ChartReview Pro
+// generated, approved, endorsed, or verified any expert/professional opinion. Sections
+// renumbered 1-24 accordingly. Bumped TOS_VERSION to 2026-09-24-v2.
+//
+// NOTE: the draft's "Arbitration and Class Action Waiver" section was intentionally
+// NOT added here — that's a standalone business/legal decision (it would replace the
+// existing Nevada-courts dispute-resolution clause) and needs Roman's explicit call
+// before it goes in. See chat 2026-09-24.
 //
 // Company: ChartReview Pro LLC; governing law: Nevada / venue Clark County, Nevada;
 // support: support@chartreviewpro.com.
@@ -18,7 +24,7 @@
 // publish it live ahead of that review (2026-09-23) — see chat for context. Replace this
 // content (and bump TOS_VERSION) once counsel has reviewed it.
 
-export const TOS_VERSION = '2026-09-24-v1';
+export const TOS_VERSION = '2026-09-24-v2';
 export const TOS_LAST_UPDATED = 'September 24, 2026';
 
 export interface TosSection {
@@ -62,10 +68,32 @@ export const TOS_SECTIONS: TosSection[] = [
       "ChartReview Pro does not provide medical expert opinions, causation opinions, disability assessments, impairment ratings, life-care planning, future treatment opinions, standard-of-care opinions, or any other expert conclusions. Outputs are organizational summaries only and must not be relied upon as a substitute for a qualified expert's independent review and professional judgment.",
       'ChartReview Pro does not guarantee that every page, provider, diagnosis, treatment event, imaging study, procedure, medication, billing entry, date, or record contained within uploaded materials will appear in the generated Output.',
       "Optical character recognition (\"OCR\") technology used by the Service may incorrectly interpret handwritten, faded, redacted, poorly scanned, rotated, or partially obscured documents. ChartReview Pro is not responsible for errors resulting from source-document quality or OCR limitations.",
+      'You may not represent that any expert opinion, medical opinion, legal opinion, or other professional conclusion was generated, approved, endorsed, or verified by ChartReview Pro.',
     ],
   },
   {
-    heading: '5. Your Content; No Training on Your Data',
+    heading: '5. No Legal, Medical, or Expert Advice; Not a Medical Device',
+    paragraphs: [
+      'The Service does not constitute medical advice, healthcare services, legal advice, clinical decision-making, diagnostic services, or treatment recommendations. You should seek independent professional judgment for all medical, legal, and clinical decisions rather than relying on the Service.',
+      'ChartReview Pro is not a medical device, a diagnostic device, a clinical decision support system, a treatment recommendation system, a healthcare provider, or a provider of medical services. The Service is intended solely as an administrative, organizational, and productivity tool.',
+    ],
+  },
+  {
+    heading: '6. Source Material and Data Completeness Disclaimer',
+    paragraphs: [
+      'ChartReview Pro is not responsible for the completeness or accuracy of the documents you upload, including missing, incomplete, duplicate, misfiled, corrupted, password-protected, damaged, improperly scanned, or misidentified records, or other inaccuracies in the materials you supply. You are solely responsible for ensuring that the records you upload are complete and accurate.',
+      'Consistent with Section 4, ChartReview Pro does not guarantee that every page, provider, diagnosis, treatment event, imaging study, procedure, medication, billing entry, date, or record contained in your uploaded materials will appear in the generated Output; you must independently review the source records to confirm completeness.',
+    ],
+  },
+  {
+    heading: '7. Litigation and Evidentiary Disclaimer',
+    paragraphs: [
+      'ChartReview Pro does not certify, authenticate, validate, preserve, or establish chain of custody for any document, and makes no representation regarding the admissibility, discoverability, evidentiary sufficiency, or authenticity of any document or Output, or their compliance with court rules, evidence rules, or other litigation or regulatory requirements.',
+      'If you use the Service in connection with litigation, an administrative proceeding, or any regulatory matter, you remain solely responsible for satisfying all applicable litigation, evidentiary, administrative, and regulatory obligations.',
+    ],
+  },
+  {
+    heading: '8. Your Content; No Training on Your Data',
     paragraphs: [
       '"User Content" means any document, file, or data you upload to the Service. As between you and us, you retain all ownership rights in your User Content. You grant us a limited, non-exclusive license to access, copy, process, and transmit your User Content solely as necessary to provide the Service to you (e.g., OCR, AI processing, storage, and display back to you).',
       "We do not use your User Content or Outputs to train, fine-tune, or otherwise improve any artificial intelligence or machine-learning model (whether ours or a third party's), and we do not sell your User Content or Outputs or share them with third parties, except (a) with subprocessors who perform OCR, AI processing, storage, or similar functions solely to provide the Service to you, or (b) as required by law.",
@@ -73,20 +101,38 @@ export const TOS_SECTIONS: TosSection[] = [
     ],
   },
   {
-    heading: '6. Protected Health Information and HIPAA',
+    heading: '9. Protected Health Information and HIPAA',
     paragraphs: [
       'If your use of the Service involves uploading PHI on behalf of a HIPAA Covered Entity or as a Business Associate, a separate Business Associate Agreement ("BAA") must be executed between you and ChartReview Pro before you upload any such PHI. The BAA, not this section, governs the parties\' respective HIPAA obligations where it applies. Nothing in these Terms limits or expands either party\'s obligations under an executed BAA.',
     ],
   },
   {
-    heading: '7. Fees, Payment, and Credits',
+    heading: '10. Security',
+    paragraphs: [
+      'ChartReview Pro maintains commercially reasonable administrative, technical, and physical safeguards designed to protect User Content. However, no electronic transmission, storage system, security measure, or internet-based service can be guaranteed to be completely secure, and ChartReview Pro does not warrant that unauthorized access, cyberattacks, security incidents, data loss, or system compromises will never occur.',
+    ],
+  },
+  {
+    heading: '11. Data Retention',
+    paragraphs: [
+      'ChartReview Pro may retain User Content, account information, system logs, backups, and Outputs for operational, security, audit, legal, compliance, disaster-recovery, and business-continuity purposes. ChartReview Pro may delete data following account termination in accordance with its data retention practices; deleted information may remain in backup systems for a reasonable period before it is fully purged.',
+    ],
+  },
+  {
+    heading: '12. Third-Party Service Providers',
+    paragraphs: [
+      'The Service relies on third-party vendors, including cloud hosting providers, artificial intelligence providers, OCR providers, data storage providers, analytics providers, and payment processors. ChartReview Pro is not responsible for interruptions, outages, delays, security incidents, or failures attributable to these third-party providers.',
+    ],
+  },
+  {
+    heading: '13. Fees, Payment, and Credits',
     paragraphs: [
       'Certain features of the Service are billed on a per-page or subscription basis, processed through our third-party payment processor (Stripe). By purchasing credits or a subscription, you authorize us to charge your chosen payment method for all applicable fees. Except as required by law or as expressly stated at the time of purchase, fees and consumed credits are non-refundable, including where an Output has already been generated for the pages in question.',
       'We may change our pricing prospectively at any time; changes will not retroactively affect credits already purchased.',
     ],
   },
   {
-    heading: '8. Acceptable Use',
+    heading: '14. Acceptable Use',
     paragraphs: ['You agree not to:'],
     bullets: [
       'Upload content you do not have the right to upload, or that infringes or violates the rights of any third party;',
@@ -97,61 +143,61 @@ export const TOS_SECTIONS: TosSection[] = [
     ],
   },
   {
-    heading: '9. Confidentiality',
+    heading: '15. Confidentiality',
     paragraphs: [
       "Each party will protect the other's confidential information (including User Content and Outputs) with at least the same degree of care it uses for its own confidential information of similar nature, and will not disclose it except as needed to provide or use the Service, as required by law, or as otherwise permitted under an applicable BAA.",
     ],
   },
   {
-    heading: '10. Intellectual Property',
+    heading: '16. Intellectual Property',
     paragraphs: [
       'The Service, including its software, design, and underlying technology, is owned by ChartReview Pro and its licensors and is protected by intellectual property laws. Except for the limited rights expressly granted in these Terms, no rights are granted to you in the Service.',
     ],
   },
   {
-    heading: '11. Disclaimer of Warranties',
+    heading: '17. Disclaimer of Warranties',
     paragraphs: [
       'THE SERVICE AND ALL OUTPUTS ARE PROVIDED "AS IS" AND "AS AVAILABLE," WITHOUT WARRANTIES OF ANY KIND, WHETHER EXPRESS, IMPLIED, OR STATUTORY, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, OR ACCURACY. WE DO NOT WARRANT THAT THE SERVICE WILL BE UNINTERRUPTED, ERROR-FREE, OR THAT ANY OUTPUT WILL BE COMPLETE OR ACCURATE.',
     ],
   },
   {
-    heading: '12. Limitation of Liability',
+    heading: '18. Limitation of Liability',
     paragraphs: [
       'TO THE MAXIMUM EXTENT PERMITTED BY LAW, CHARTREVIEW PRO WILL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR ANY LOSS OF PROFITS, DATA, OR GOODWILL, ARISING FROM YOUR USE OF THE SERVICE OR ANY OUTPUT, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGES. OUR TOTAL LIABILITY FOR ANY CLAIM ARISING FROM THESE TERMS WILL NOT EXCEED THE AMOUNT YOU PAID US IN THE TWELVE (12) MONTHS PRECEDING THE CLAIM.',
     ],
   },
   {
-    heading: '13. Indemnification',
+    heading: '19. Indemnification',
     paragraphs: [
       "You agree to indemnify and hold ChartReview Pro harmless from any claims, damages, or expenses (including reasonable attorneys' fees) arising from: (a) your User Content; (b) your breach of these Terms; (c) your use, reliance on, submission, or distribution of any Output — including providing it to any third party such as a court, opposing counsel, client, insurer, or regulator — without your own independent review and sign-off as described in Section 4; or (d) your violation of applicable law.",
     ],
   },
   {
-    heading: '14. Term, Suspension, and Termination',
+    heading: '20. Term, Suspension, and Termination',
     paragraphs: [
-      'These Terms remain in effect while you use the Service. We may suspend or terminate your access if you breach these Terms, or for non-payment. You may stop using the Service, and delete your account, at any time. Sections that by their nature should survive termination (e.g., Sections 4-6, 9-13) will survive.',
+      'These Terms remain in effect while you use the Service. We may suspend or terminate your access if you breach these Terms, or for non-payment. You may stop using the Service, and delete your account, at any time. Sections that by their nature should survive termination (e.g., Sections 4-12, 15-19) will survive.',
     ],
   },
   {
-    heading: '15. Governing Law and Dispute Resolution',
+    heading: '21. Governing Law and Dispute Resolution',
     paragraphs: [
       'These Terms are governed by the laws of the State of Nevada, without regard to conflict-of-laws principles. Any dispute arising from these Terms will be resolved in the state or federal courts located in Clark County, Nevada, and you consent to personal jurisdiction there.',
     ],
   },
   {
-    heading: '16. Changes to These Terms',
+    heading: '22. Changes to These Terms',
     paragraphs: [
       'We may update these Terms from time to time. If we make material changes, we will notify you (e.g., by email or in-app notice) before they take effect. Continued use of the Service after changes take effect constitutes acceptance.',
     ],
   },
   {
-    heading: '17. Miscellaneous',
+    heading: '23. Miscellaneous',
     paragraphs: [
       'If any provision of these Terms is found unenforceable, the remaining provisions remain in full effect. These Terms, together with any executed BAA, constitute the entire agreement between you and ChartReview Pro regarding the Service. You may not assign these Terms without our consent; we may assign these Terms in connection with a merger, acquisition, or sale of assets.',
     ],
   },
   {
-    heading: '18. Contact',
+    heading: '24. Contact',
     paragraphs: ['Questions about these Terms can be directed to support@chartreviewpro.com.'],
   },
 ];
