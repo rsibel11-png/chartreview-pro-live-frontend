@@ -495,6 +495,9 @@ export default function Login({ onLogin }: LoginProps) {
                   ))}
                 </ul>
               )}
+              {(section.closing || []).map((c, ci) => (
+                <p key={`closing-${ci}`} className="mt-2 mb-2 leading-relaxed">{c}</p>
+              ))}
             </div>
           ))}
         </div>

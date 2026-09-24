@@ -1,16 +1,20 @@
 // termsOfService.ts — chartreview-pro-live-frontend
-// Updated: 2026-09-24 (v2) — Added six new sections drawn from Roman's expanded draft
-// (CHARTREVIEWPRO.docx): "No Legal, Medical, or Expert Advice; Not a Medical Device",
-// "Source Material and Data Completeness Disclaimer", "Litigation and Evidentiary
-// Disclaimer", "Security", "Data Retention", and "Third-Party Service Providers". Also
-// added one more Section 4 bullet: users may not represent that ChartReview Pro
-// generated, approved, endorsed, or verified any expert/professional opinion. Sections
-// renumbered 1-24 accordingly. Bumped TOS_VERSION to 2026-09-24-v2.
+// Updated: 2026-09-24 (v3) — Per Roman's request: (1) split the old "Governing Law and
+// Dispute Resolution" section into a standalone Section 21 "Governing Law" plus a new
+// Section 22 "Arbitration and Class Action Waiver" (binding individual arbitration under
+// the FAA, administered by the AAA in Clark County, Nevada; jury-trial and class/
+// representative-action waiver; small-claims and IP/confidentiality injunctive-relief
+// carve-outs; severability specific to the class waiver). (2) Rewrote Section 19
+// "Indemnification" to be maximally strong: broader indemnified-party list (officers,
+// directors, employees, contractors, affiliates, licensors, agents), broader claim types,
+// seven specific trigger categories (up from four), an assumption-of-defense/control
+// clause, and an explicit survival clause. Sections 23-25 renumbered accordingly (25
+// total). Section 20's post-termination survival list updated to include 21-22.
+// Bumped TOS_VERSION to 2026-09-24-v3.
 //
-// NOTE: the draft's "Arbitration and Class Action Waiver" section was intentionally
-// NOT added here — that's a standalone business/legal decision (it would replace the
-// existing Nevada-courts dispute-resolution clause) and needs Roman's explicit call
-// before it goes in. See chat 2026-09-24.
+// NOTE re: arbitration administrator — AAA (American Arbitration Association) was chosen
+// as a standard, common default since Roman did not specify one; swap to JAMS or another
+// administrator if preferred.
 //
 // Company: ChartReview Pro LLC; governing law: Nevada / venue Clark County, Nevada;
 // support: support@chartreviewpro.com.
@@ -24,13 +28,14 @@
 // publish it live ahead of that review (2026-09-23) — see chat for context. Replace this
 // content (and bump TOS_VERSION) once counsel has reviewed it.
 
-export const TOS_VERSION = '2026-09-24-v2';
+export const TOS_VERSION = '2026-09-24-v3';
 export const TOS_LAST_UPDATED = 'September 24, 2026';
 
 export interface TosSection {
   heading: string;
   paragraphs?: string[];
   bullets?: string[];
+  closing?: string[]; // rendered as paragraphs AFTER bullets (e.g. Section 19's defense/survival text)
 }
 
 export const TOS_SECTIONS: TosSection[] = [
@@ -169,35 +174,57 @@ export const TOS_SECTIONS: TosSection[] = [
   {
     heading: '19. Indemnification',
     paragraphs: [
-      "You agree to indemnify and hold ChartReview Pro harmless from any claims, damages, or expenses (including reasonable attorneys' fees) arising from: (a) your User Content; (b) your breach of these Terms; (c) your use, reliance on, submission, or distribution of any Output — including providing it to any third party such as a court, opposing counsel, client, insurer, or regulator — without your own independent review and sign-off as described in Section 4; or (d) your violation of applicable law.",
+      'You agree to defend, indemnify, and hold harmless ChartReview Pro and its officers, directors, employees, contractors, affiliates, licensors, and agents (collectively, the "ChartReview Pro Parties") from and against any and all claims, demands, suits, actions, proceedings, damages, liabilities, losses, judgments, settlements, costs, and expenses (including reasonable attorneys\' fees and costs of investigation), whether known or unknown, foreseen or unforeseen, arising out of or in any way related to:',
+    ],
+    bullets: [
+      'Your User Content, including any claim that it infringes, misappropriates, or violates the rights of any third party, or that you lacked the authority, consent, or legal right to upload or submit it;',
+      "Your access to or use of the Service, or any use of the Service by any person using your account, whether or not authorized by you;",
+      'Your breach or alleged breach of these Terms, including any representation or warranty made in them;',
+      "Your, or any third party's, use of, reliance on, submission, distribution, or provision of any Output — including providing it to any court, opposing counsel, client, employer, insurer, regulator, or any other third party — without the independent review and professional sign-off required under Section 4;",
+      'Any report, testimony, presentation, affidavit, declaration, expert opinion, medical opinion, legal filing, or other work product prepared, submitted, or relied upon using the Service or any Output, and any litigation, arbitration, administrative, or regulatory proceeding arising from or relating to any such Output or work product;',
+      'Your violation of any applicable law, regulation, professional or ethical obligation, or third-party right; and',
+      'Your negligence, willful misconduct, or fraud.',
+    ],
+    closing: [
+      'ChartReview Pro reserves the right, at your expense, to assume the exclusive defense and control of any matter otherwise subject to indemnification by you, in which event you will cooperate with ChartReview Pro in asserting any available defenses. This indemnification obligation will survive termination of these Terms and your use of the Service.',
     ],
   },
   {
     heading: '20. Term, Suspension, and Termination',
     paragraphs: [
-      'These Terms remain in effect while you use the Service. We may suspend or terminate your access if you breach these Terms, or for non-payment. You may stop using the Service, and delete your account, at any time. Sections that by their nature should survive termination (e.g., Sections 4-12, 15-19) will survive.',
+      'These Terms remain in effect while you use the Service. We may suspend or terminate your access if you breach these Terms, or for non-payment. You may stop using the Service, and delete your account, at any time. Sections that by their nature should survive termination (e.g., Sections 4-12, 15-19, 21-22) will survive.',
     ],
   },
   {
-    heading: '21. Governing Law and Dispute Resolution',
+    heading: '21. Governing Law',
     paragraphs: [
-      'These Terms are governed by the laws of the State of Nevada, without regard to conflict-of-laws principles. Any dispute arising from these Terms will be resolved in the state or federal courts located in Clark County, Nevada, and you consent to personal jurisdiction there.',
+      'These Terms, and any Dispute (as defined in Section 22) between you and ChartReview Pro, are governed by the laws of the State of Nevada, without regard to conflict-of-laws principles.',
     ],
   },
   {
-    heading: '22. Changes to These Terms',
+    heading: '22. Arbitration and Class Action Waiver',
+    paragraphs: [
+      'PLEASE READ THIS SECTION CAREFULLY. IT AFFECTS YOUR LEGAL RIGHTS, INCLUDING YOUR RIGHT TO FILE A LAWSUIT IN COURT AND TO HAVE A JURY TRIAL.',
+      'Except for disputes that qualify for small claims court, or claims for injunctive or equitable relief to protect intellectual property, confidential information, or to prevent unauthorized access to or misuse of the Service, you and ChartReview Pro agree that any dispute, claim, or controversy arising out of or relating to these Terms, the Service, or any Output (a "Dispute") will be resolved exclusively through final and binding arbitration rather than in court.',
+      'The arbitration will be administered by the American Arbitration Association ("AAA") under its Commercial Arbitration Rules then in effect, conducted by a single arbitrator, and will take place in Clark County, Nevada, or remotely by videoconference at the arbitrator\'s discretion. This arbitration agreement is governed by the Federal Arbitration Act. The arbitrator\'s decision will be final and binding on the parties and may be entered as a judgment in any court of competent jurisdiction.',
+      'YOU AND CHARTREVIEW PRO EACH WAIVE THE RIGHT TO A JURY TRIAL AND THE RIGHT TO PARTICIPATE IN A CLASS ACTION, CLASS ARBITRATION, PRIVATE ATTORNEY GENERAL ACTION, OR ANY OTHER REPRESENTATIVE OR CONSOLIDATED PROCEEDING, WHETHER AS A PLAINTIFF, CLASS MEMBER, OR OTHERWISE. ALL DISPUTES MUST BE BROUGHT IN AN INDIVIDUAL CAPACITY ONLY. THE ARBITRATOR MAY NOT CONSOLIDATE MORE THAN ONE PERSON\'S CLAIMS AND MAY NOT OTHERWISE PRESIDE OVER ANY FORM OF A REPRESENTATIVE, CLASS, OR CONSOLIDATED PROCEEDING.',
+      'If any part of this arbitration agreement is found unenforceable, the remainder will remain in full force, except that if the class-action and class-arbitration waiver above is found unenforceable as to a particular Dispute, that Dispute (and only that Dispute) may proceed in court, and all other Disputes remain subject to this arbitration agreement.',
+    ],
+  },
+  {
+    heading: '23. Changes to These Terms',
     paragraphs: [
       'We may update these Terms from time to time. If we make material changes, we will notify you (e.g., by email or in-app notice) before they take effect. Continued use of the Service after changes take effect constitutes acceptance.',
     ],
   },
   {
-    heading: '23. Miscellaneous',
+    heading: '24. Miscellaneous',
     paragraphs: [
       'If any provision of these Terms is found unenforceable, the remaining provisions remain in full effect. These Terms, together with any executed BAA, constitute the entire agreement between you and ChartReview Pro regarding the Service. You may not assign these Terms without our consent; we may assign these Terms in connection with a merger, acquisition, or sale of assets.',
     ],
   },
   {
-    heading: '24. Contact',
+    heading: '25. Contact',
     paragraphs: ['Questions about these Terms can be directed to support@chartreviewpro.com.'],
   },
 ];
