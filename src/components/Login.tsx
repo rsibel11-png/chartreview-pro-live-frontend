@@ -17,10 +17,14 @@ import {
   CognitoUserSession,
 } from 'amazon-cognito-identity-js';
 import { FileText, Lock, Mail, Eye, EyeOff } from 'lucide-react';
+import { TOS_VERSION, TOS_SECTIONS, TOS_LAST_UPDATED } from '../legal/termsOfService';
 
 // ── Cognito config ─────────────────────────────────────────────────────────
 const USER_POOL_ID = 'us-east-1_HGvNxEFP6';
 const CLIENT_ID    = '12tdr6tcnuvc7kn40ka1vubo6m';
+
+// Updated: 2026-09-23 — used by the post-verify acceptTerms/credits calls below (ToS gate).
+const AWS_API_URL = process.env.REACT_APP_AWS_API_URL || '';
 
 const userPool = new CognitoUserPool({
   UserPoolId: USER_POOL_ID,
@@ -39,7 +43,7 @@ interface LoginProps {
   onLogin: (user: AuthUser) => void;
 }
 
-type Mode = 'signin' | 'signup' | 'verify' | 'newPassword' | 'forgot' | 'reset';
+type Mode = 'signin' | 'signup' | 'verify' | 'newPassword' | 'forgot' | 'reset' | 'terms';
 
 // ── Password policy (mirrors the Cognito User Pool policy) ─────────────────
 function passwordPolicyError(pw: string): string | null {
@@ -123,6 +127,10 @@ export default function Login({ onLogin }: LoginProps) {
   const [verificationCode,     setVerificationCode]     = useState('');
   const [signupUser,           setSignupUser]           = useState<CognitoUser | null>(null);
   const [resendCooldown,       setResendCooldown]       = useState(false);
+  const [tosAccepted,          setTosAccepted]          = useState(false);
+  // Updated: 2026-09-23 — which mode to return to when the user closes the /terms view
+  // (opened from Create Account, so it should come back to 'signup', preserving entered fields).
+  const [termsReturnMode,      setTermsReturnMode]      = useState<Mode>('signup');
 
   // ── Password recovery state ────────────────────────────────────────────────
   const [resetCode,            setResetCode]            = useState('');
@@ -136,7 +144,33 @@ export default function Login({ onLogin }: LoginProps) {
   };
 
   // ── Sign in ───────────────────────────────────────────────────────────────
-  const signIn = (signInEmail: string, signInPassword: string) => {
+  // Updated: 2026-09-23 — best-effort ToS acceptance record. Calls GET /stripe/credits FIRST
+  // (which lazily creates the user's USER_CREDITS_TABLE record with its default free-page
+  // grant if none exists yet) and only THEN POSTs /users/accept-terms, so the accept-terms
+  // UpdateCommand always lands on an already-existing record and can never race
+  // stripe.js's ensureUserRecord "create with defaults only if no record exists yet" check.
+  // Fire-and-forget: a network blip here must never block a user from reaching the app they
+  // already successfully created and verified — errors are only logged to the console.
+  const recordTermsAcceptance = async (idToken: string) => {
+    if (!AWS_API_URL) return;
+    try {
+      await fetch(`${AWS_API_URL}/stripe/credits`, {
+        headers: { 'Authorization': `Bearer ${idToken}` },
+      });
+      await fetch(`${AWS_API_URL}/users/accept-terms`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ version: TOS_VERSION }),
+      });
+    } catch (err) {
+      console.error('recordTermsAcceptance failed (non-blocking):', err);
+    }
+  };
+
+  const signIn = (signInEmail: string, signInPassword: string, recordTerms: boolean = false) => {
     setLoading(true);
     resetMessages();
 
@@ -149,9 +183,13 @@ export default function Login({ onLogin }: LoginProps) {
     cognitoUser.authenticateUser(authDetails, {
       onSuccess: (session: CognitoUserSession) => {
         setLoading(false);
+        const idToken = session.getIdToken().getJwtToken();
+        if (recordTerms) {
+          recordTermsAcceptance(idToken);
+        }
         onLogin({
           email:       signInEmail.trim(),
-          idToken:     session.getIdToken().getJwtToken(),
+          idToken,
           accessToken: session.getAccessToken().getJwtToken(),
           cognitoUser,
         });
@@ -220,6 +258,10 @@ export default function Login({ onLogin }: LoginProps) {
       setError(pwErr);
       return;
     }
+    if (!tosAccepted) {
+      setError('You must agree to the Terms of Service to create an account.');
+      return;
+    }
 
     setLoading(true);
     const attributes = [new CognitoUserAttribute({ Name: 'email', Value: email.trim() })];
@@ -263,8 +305,8 @@ export default function Login({ onLogin }: LoginProps) {
         }
         return;
       }
-      // Verified — sign the new user straight in.
-      signIn(email, signupPassword);
+      // Verified — sign the new user straight in, and record their ToS acceptance.
+      signIn(email, signupPassword, true);
     });
   };
 
@@ -435,6 +477,38 @@ export default function Login({ onLogin }: LoginProps) {
   }
 
   // ── Render: create account ────────────────────────────────────────────────
+  // ── Render: Terms of Service (opened from Create Account) ────────────────
+  if (mode === 'terms') {
+    return (
+      <Shell error={error} info={info} title="Terms of Service" subtitle={`Last updated: ${TOS_LAST_UPDATED}`} icon={<FileText className="w-7 h-7 text-white" />}>
+        <div className="space-y-5 max-h-[60vh] overflow-y-auto pr-1 text-sm text-slate-700">
+          {TOS_SECTIONS.map((section, i) => (
+            <div key={i}>
+              <h3 className="font-semibold text-slate-800 mb-1">{section.heading}</h3>
+              {(section.paragraphs || []).map((p, pi) => (
+                <p key={pi} className="mb-2 leading-relaxed">{p}</p>
+              ))}
+              {section.bullets && (
+                <ul className="list-disc pl-5 space-y-1">
+                  {section.bullets.map((b, bi) => (
+                    <li key={bi} className="leading-relaxed">{b}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={() => setMode(termsReturnMode)}
+          className="w-full py-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold rounded-lg transition-all duration-200 mt-4"
+        >
+          Back
+        </button>
+      </Shell>
+    );
+  }
+
   if (mode === 'signup') {
     return (
       <Shell error={error} info={info} title="Create Account" subtitle="Set up your ChartReview Pro access" icon={<FileText className="w-7 h-7 text-white" />}>
@@ -480,9 +554,28 @@ export default function Login({ onLogin }: LoginProps) {
             <input type="checkbox" checked={showPass} onChange={() => setShowPass(!showPass)} />
             Show passwords
           </label>
+          <label className="flex items-start gap-2 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              checked={tosAccepted}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTosAccepted(e.target.checked)}
+              className="mt-0.5"
+              required
+            />
+            <span>
+              I agree to the{' '}
+              <button
+                type="button"
+                onClick={() => { setTermsReturnMode('signup'); setMode('terms'); }}
+                className="text-blue-600 hover:text-blue-700 font-medium underline"
+              >
+                Terms of Service
+              </button>
+            </span>
+          </label>
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !tosAccepted}
             className="w-full py-3 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold rounded-lg transition-all duration-200 disabled:opacity-60 mt-2"
           >
             {loading ? 'Creating account…' : 'Create Account'}
