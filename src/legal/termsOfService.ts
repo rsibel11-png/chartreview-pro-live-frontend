@@ -1,6 +1,13 @@
 // termsOfService.ts — chartreview-pro-live-frontend
-// Updated: 2026-09-23 — Live ChartReview Pro Terms of Service (company: ChartReview Pro LLC;
-// governing law: Nevada / venue Clark County, Nevada; support: support@chartreviewpro.com).
+// Updated: 2026-09-24 — Added Section 4 disclaimers: no expert opinions/causation/disability/
+// impairment/life-care/standard-of-care conclusions, no guarantee that every page/provider/
+// diagnosis/event/date in source materials will appear in the Output, and an OCR-limitations
+// disclaimer (handwritten/faded/redacted/poorly-scanned/rotated/obscured documents). Bumped
+// TOS_VERSION to 2026-09-24-v1 since TOS_SECTIONS changed (see prior header note on why).
+// Roman requested this addition 2026-09-24; text closely follows his own wording.
+//
+// Company: ChartReview Pro LLC; governing law: Nevada / venue Clark County, Nevada;
+// support: support@chartreviewpro.com.
 // Rendered by Login.tsx's "terms" view (shown from a link on the Create Account form) and
 // gates signup: TOS_VERSION is sent to POST /users/accept-terms right after a new user
 // verifies their email, so every acceptance record stays tied to the exact text version the
@@ -11,8 +18,8 @@
 // publish it live ahead of that review (2026-09-23) — see chat for context. Replace this
 // content (and bump TOS_VERSION) once counsel has reviewed it.
 
-export const TOS_VERSION = '2026-09-23-v1';
-export const TOS_LAST_UPDATED = 'September 23, 2026';
+export const TOS_VERSION = '2026-09-24-v1';
+export const TOS_LAST_UPDATED = 'September 24, 2026';
 
 export interface TosSection {
   heading: string;
@@ -52,6 +59,9 @@ export const TOS_SECTIONS: TosSection[] = [
       "By using, relying on, submitting, or providing any Output to a third party, you affirmatively represent that you (or, if you are using the Service on behalf of an organization, that organization) have reviewed that Output and are the party ultimately responsible for, and are knowingly signing off on, its accuracy and completeness before it goes to that third party. ChartReview Pro's role is limited to providing a drafting and organizational aid; final review, verification, and sign-off responsibility for any Output rests solely with you, not with ChartReview Pro.",
       'ChartReview Pro is not a party to, and assumes no responsibility for, any medical, legal, or business decision made using an Output.',
       'You will not represent an Output as an official medical record or as having been reviewed or certified by a licensed clinician unless you have in fact performed that review yourself.',
+      "ChartReview Pro does not provide medical expert opinions, causation opinions, disability assessments, impairment ratings, life-care planning, future treatment opinions, standard-of-care opinions, or any other expert conclusions. Outputs are organizational summaries only and must not be relied upon as a substitute for a qualified expert's independent review and professional judgment.",
+      'ChartReview Pro does not guarantee that every page, provider, diagnosis, treatment event, imaging study, procedure, medication, billing entry, date, or record contained within uploaded materials will appear in the generated Output.',
+      "Optical character recognition (\"OCR\") technology used by the Service may incorrectly interpret handwritten, faded, redacted, poorly scanned, rotated, or partially obscured documents. ChartReview Pro is not responsible for errors resulting from source-document quality or OCR limitations.",
     ],
   },
   {
