@@ -28,7 +28,7 @@
 // publish it live ahead of that review (2026-09-23) — see chat for context. Replace this
 // content (and bump TOS_VERSION) once counsel has reviewed it.
 
-export const TOS_VERSION = '2026-09-24-v3';
+export const TOS_VERSION = '2026-09-24-v4';
 export const TOS_LAST_UPDATED = 'September 24, 2026';
 
 export interface TosSection {
@@ -73,7 +73,7 @@ export const TOS_SECTIONS: TosSection[] = [
       "ChartReview Pro does not provide medical expert opinions, causation opinions, disability assessments, impairment ratings, life-care planning, future treatment opinions, standard-of-care opinions, or any other expert conclusions. Outputs are organizational summaries only and must not be relied upon as a substitute for a qualified expert's independent review and professional judgment.",
       'ChartReview Pro does not guarantee that every page, provider, diagnosis, treatment event, imaging study, procedure, medication, billing entry, date, or record contained within uploaded materials will appear in the generated Output.',
       "Optical character recognition (\"OCR\") technology used by the Service may incorrectly interpret handwritten, faded, redacted, poorly scanned, rotated, or partially obscured documents. ChartReview Pro is not responsible for errors resulting from source-document quality or OCR limitations.",
-      'You may not represent that any expert opinion, medical opinion, legal opinion, or other professional conclusion was generated, approved, endorsed, or verified by ChartReview Pro.',
+      'Users may not identify ChartReview Pro as the source of any expert opinion, causation opinion, impairment assessment, future treatment recommendation, disability determination, life-care plan, or standard-of-care opinion.',
     ],
   },
   {
